@@ -58,42 +58,42 @@ if __name__ == "__main__":
         "--input_artifact", 
         type=str, 
         help="Name of the input artifact to download from W&B",
-        required=True
+        
     )
 
     parser.add_argument(
         "--output_artifact", 
         type=str,
         help="Name for the output artifact that will contain the cleaned data",
-        required=True
+       
     )
 
     parser.add_argument(
         "--output_type", 
         type=str,
         help="Type of the output artifact, e.g., 'cleaned_data'",
-        required=True
+        
     )
 
     parser.add_argument(
         "--output_description", 
         type=str,
         help="Description of the output artifact",
-        required=True
+        
     )
 
     parser.add_argument(
         "--min_price", 
         type=float, 
         help="Minimum price to include in the cleaned dataset",
-        required=True
+        
     )
 
     parser.add_argument(
         "--max_price", 
         type=float, 
         help="Maximum price to include in the cleaned dataset",
-        required=True
+        
     )
 
     args = parser.parse_args()
