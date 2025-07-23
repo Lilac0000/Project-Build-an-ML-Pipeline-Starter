@@ -40,9 +40,8 @@ def go(config: DictConfig):
             )
 
         if "basic_cleaning" in active_steps:
-            basic_cleaning_path = os.path.abspath("src/basic_cleaning")
             mlflow.run(
-                basic_cleaning_path,
+                "src/basic_cleaning",
                 env_manager="conda",
                 parameters={
                     "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
@@ -55,9 +54,8 @@ def go(config: DictConfig):
             )
 
         if "data_check" in active_steps:
-            data_check_path = os.path.abspath("src/data_check")
             mlflow.run(
-                data_check_path,
+                "src/data_check",
                 env_manager="conda",
                 parameters={
                     "csv": "clean_sample.csv:latest",
@@ -69,9 +67,8 @@ def go(config: DictConfig):
             )
 
         if "data_split" in active_steps:
-            data_split_path = os.path.abspath("src/data_split")
             mlflow.run(
-                data_split_path,
+                "src/data_split",
                 env_manager="conda",
                 parameters={
                     "input_artifact": "clean_sample.csv:latest",
@@ -86,9 +83,8 @@ def go(config: DictConfig):
             with open(rf_config, "w+") as fp:
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
 
-            train_rf_path = os.path.abspath("src/train_random_forest")
             mlflow.run(
-                train_rf_path,
+                "src/train_random_forest",
                 env_manager="conda",
                 parameters={
                     "trainval_artifact": "trainval.csv:latest",
@@ -99,16 +95,14 @@ def go(config: DictConfig):
             )
 
         if "test_regression_model" in active_steps:
-            test_regression_path = os.path.abspath("src/test_regression_model")
             mlflow.run(
-                test_regression_path,
+                "src/test_regression_model",
                 env_manager="conda",
                 parameters={
                     "mlflow_model": "random_forest_export:prod",
                     "test_data": "test.csv:latest",
                 },
             )
-
 
 if __name__ == "__main__":
     go()
