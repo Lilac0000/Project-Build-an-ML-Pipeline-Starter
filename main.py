@@ -1,10 +1,12 @@
-import json
-import mlflow
-import tempfile
 import os
-import wandb
+import json
+import tempfile
 import hydra
 from omegaconf import DictConfig
+
+# Import your step modules (make sure these modules exist and have a run() function)
+from src import get_data, basic_cleaning, data_check, data_split, train_random_forest, test_regression_model
+
 
 _steps = [
     "download",
@@ -12,11 +14,12 @@ _steps = [
     "data_check",
     "data_split",
     "train_random_forest",
-    # "test_regression_model"  # Uncomment if you want to run this step explicitly
+    "test_regression_model",
 ]
 
 @hydra.main(config_name="config")
 def go(config: DictConfig):
+
     os.environ["WANDB_PROJECT"] = config["main"]["project_name"]
     os.environ["WANDB_RUN_GROUP"] = config["main"]["experiment_name"]
 
@@ -26,86 +29,68 @@ def go(config: DictConfig):
     with tempfile.TemporaryDirectory() as tmp_dir:
 
         if "download" in active_steps:
-            download_path = os.path.abspath("src/download")
-            mlflow.run(
-                uri=download_path,
-                env_manager="conda",
-                parameters={
-                    "sample": config["etl"]["sample"],
-                    "artifact_name": "sample.csv",
-                    "artifact_type": "raw_data",
-                    "artifact_description": "Raw file as downloaded",
-                },
+            print("Running download step...")
+            get_data.run(
+                sample=config["etl"]["sample"],
+                artifact_name="sample.csv",
+                artifact_type="raw_data",
+                artifact_description="Raw file as downloaded",
+                tmp_dir=tmp_dir
             )
 
         if "basic_cleaning" in active_steps:
-            basic_cleaning_path = os.path.abspath("src/basic_cleaning")
-            mlflow.run(
-                uri=basic_cleaning_path,
-                env_manager="conda",
-                parameters={
-                    "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
-                    "output_artifact": "clean_sample.csv",
-                    "output_type": "clean_data",
-                    "output_description": "Cleaned data",
-                    "min_price": float(config["etl"]["min_price"]),
-                    "max_price": float(config["etl"]["max_price"]),
-                },
+            print("Running basic_cleaning step...")
+            basic_cleaning.run(
+                input_artifact=f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
+                output_artifact="clean_sample.csv",
+                output_type="clean_data",
+                output_description="Cleaned data",
+                min_price=float(config["etl"]["min_price"]),
+                max_price=float(config["etl"]["max_price"]),
+                tmp_dir=tmp_dir
             )
 
         if "data_check" in active_steps:
-            data_check_path = os.path.abspath("src/data_check")
-            mlflow.run(
-                uri=data_check_path,
-                env_manager="conda",
-                parameters={
-                    "csv": "clean_sample.csv:latest",
-                    "ref": "clean_sample.csv:reference",
-                    "min_price": float(config["etl"]["min_price"]),
-                    "max_price": float(config["etl"]["max_price"]),
-                    "kl_threshold": float(config["data_check"]["kl_threshold"]),
-                },
+            print("Running data_check step...")
+            data_check.run(
+                csv="clean_sample.csv:latest",
+                ref="clean_sample.csv:reference",
+                min_price=float(config["etl"]["min_price"]),
+                max_price=float(config["etl"]["max_price"]),
+                kl_threshold=float(config["data_check"]["kl_threshold"]),
+                tmp_dir=tmp_dir
             )
 
         if "data_split" in active_steps:
-            data_split_path = os.path.abspath("src/data_split")
-            mlflow.run(
-                uri=data_split_path,
-                env_manager="conda",
-                parameters={
-                    "input_artifact": "clean_sample.csv:latest",
-                    "test_size": float(config["etl"]["test_size"]),
-                    "random_state": int(config["etl"]["random_seed"]),
-                    "stratify": config["etl"]["stratify_col"],
-                },
+            print("Running data_split step...")
+            data_split.run(
+                input_artifact="clean_sample.csv:latest",
+                test_size=float(config["etl"]["test_size"]),
+                random_state=int(config["etl"]["random_seed"]),
+                stratify=config["etl"]["stratify_col"],
+                tmp_dir=tmp_dir
             )
 
         if "train_random_forest" in active_steps:
-            rf_config = os.path.abspath("rf_config.json")
-            with open(rf_config, "w+") as fp:
+            print("Running train_random_forest step...")
+            rf_config_path = os.path.join(tmp_dir, "rf_config.json")
+            with open(rf_config_path, "w") as fp:
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
 
-            train_rf_path = os.path.abspath("src/train_random_forest")
-            mlflow.run(
-                uri=train_rf_path,
-                env_manager="conda",
-                parameters={
-                    "trainval_artifact": "trainval.csv:latest",
-                    "random_forest_config": rf_config,
-                    "val_size": float(config["modeling"]["val_size"]),
-                    "stratify": config["modeling"]["stratify"],
-                },
+            train_random_forest.run(
+                trainval_artifact="trainval.csv:latest",
+                random_forest_config=rf_config_path,
+                val_size=float(config["modeling"]["val_size"]),
+                stratify=config["modeling"]["stratify"],
+                tmp_dir=tmp_dir
             )
 
         if "test_regression_model" in active_steps:
-            test_regression_path = os.path.abspath("src/test_regression_model")
-            mlflow.run(
-                uri=test_regression_path,
-                env_manager="conda",
-                parameters={
-                    "mlflow_model": "random_forest_export:prod",
-                    "test_data": "test.csv:latest",
-                },
+            print("Running test_regression_model step...")
+            test_regression_model.run(
+                mlflow_model="random_forest_export:prod",
+                test_data="test.csv:latest",
+                tmp_dir=tmp_dir
             )
 
 
