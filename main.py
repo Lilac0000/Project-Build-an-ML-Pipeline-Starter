@@ -1,10 +1,11 @@
-import json
-import mlflow
-import tempfile
 import os
 import subprocess
 import hydra
 from omegaconf import DictConfig
+import pathlib
+import json
+import mlflow
+import tempfile
 
 _steps = [
     "download",
@@ -12,20 +13,19 @@ _steps = [
     "data_check",
     "data_split",
     "train_random_forest",
-    # "test_regression_model"  # Uncomment if you want to run this step explicitly
 ]
 
 def data_check_step():
     print("Running data checks with pytest...")
-    # Run pytest on your test file (adjust path if needed)
-    result = subprocess.run(["pytest", "src/data_check/test_data.py", "-v"], capture_output=False)
+    test_path = pathlib.Path(__file__).parent / "src" / "data_check" / "test_data.py"
+    result = subprocess.run(["pytest", str(test_path), "-v"])
     if result.returncode != 0:
         print("Data checks failed!")
         exit(1)
     else:
         print("Data checks passed!")
 
-@hydra.main(config_name="config")
+@hydra.main(config_path="conf", config_name="config", version_base="1.3")
 def go(config: DictConfig):
     os.environ["WANDB_PROJECT"] = config["main"]["project_name"]
     os.environ["WANDB_RUN_GROUP"] = config["main"]["experiment_name"]
@@ -96,19 +96,6 @@ def go(config: DictConfig):
                     "stratify": config["modeling"]["stratify"],
                 },
             )
-
-        # Uncomment if you want to run testing explicitly
-        # if "test_regression_model" in active_steps:
-        #     test_regression_path = os.path.abspath("src/test_regression_model")
-        #     mlflow.run(
-        #         test_regression_path,
-        #         env_manager="conda",
-        #         parameters={
-        #             "mlflow_model": "random_forest_export:prod",
-        #             "test_data": "test.csv:latest",
-        #         },
-        #     )
-
 
 if __name__ == "__main__":
     go()
