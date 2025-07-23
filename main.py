@@ -41,7 +41,7 @@ def go(config: DictConfig):
 
         if "basic_cleaning" in active_steps:
             mlflow.run(
-                "src/basic_cleaning",
+                "./src/basic_cleaning",
                 env_manager="conda",
                 parameters={
                     "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
@@ -55,7 +55,7 @@ def go(config: DictConfig):
 
         if "data_check" in active_steps:
             mlflow.run(
-                "src/data_check",
+                "./src/data_check",
                 env_manager="conda",
                 parameters={
                     "csv": "clean_sample.csv:latest",
@@ -68,7 +68,7 @@ def go(config: DictConfig):
 
         if "data_split" in active_steps:
             mlflow.run(
-                "src/data_split",
+                "./src/data_split",
                 env_manager="conda",
                 parameters={
                     "input_artifact": "clean_sample.csv:latest",
@@ -84,7 +84,7 @@ def go(config: DictConfig):
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
 
             mlflow.run(
-                "src/train_random_forest",
+                "./src/train_random_forest",
                 env_manager="conda",
                 parameters={
                     "trainval_artifact": "trainval.csv:latest",
@@ -96,7 +96,7 @@ def go(config: DictConfig):
 
         if "test_regression_model" in active_steps:
             mlflow.run(
-                "src/test_regression_model",
+                "./src/test_regression_model",
                 env_manager="conda",
                 parameters={
                     "mlflow_model": "random_forest_export:prod",
