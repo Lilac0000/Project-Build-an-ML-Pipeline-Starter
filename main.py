@@ -44,7 +44,7 @@ def go(config: DictConfig):
         # Step 2: Basic Cleaning
         if "basic_cleaning" in active_steps:
             mlflow.run(
-                os.path.abspath("src/basic_cleaning"),
+                "./src/basic_cleaning",
                 "main",
                 env_manager="conda",
                 parameters={
@@ -60,7 +60,7 @@ def go(config: DictConfig):
         # Step 3: Data Quality Check
         if "data_check" in active_steps:
             mlflow.run(
-                os.path.abspath("src/data_check"),
+                "./src/data_check",
                 "main",
                 env_manager="conda",
                 parameters={
@@ -74,7 +74,7 @@ def go(config: DictConfig):
         # Step 4: Train/Validation/Test Split
         if "data_split" in active_steps:
             mlflow.run(
-                os.path.abspath("src/data_split"),
+                "./src/data_split",
                 "main",
                 env_manager="conda",
                 parameters={
@@ -92,7 +92,7 @@ def go(config: DictConfig):
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
             
             mlflow.run(
-                os.path.abspath("src/train_random_forest"),
+                "./src/train_random_forest",
                 "main",
                 env_manager="conda",
                 parameters={
