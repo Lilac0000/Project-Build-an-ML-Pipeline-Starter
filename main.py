@@ -1,8 +1,6 @@
 import os
-import subprocess
 import hydra
 from omegaconf import DictConfig
-import pathlib
 import json
 import mlflow
 import tempfile
@@ -15,26 +13,16 @@ _steps = [
     "train_random_forest",
 ]
 
-def data_check_step():
-    print("Running data checks with pytest...")
-    test_path = pathlib.Path(__file__).parent / "src" / "data_check" / "test_data.py"
-    result = subprocess.run(["pytest", str(test_path), "-v"])
-    if result.returncode != 0:
-        print("Data checks failed!")
-        exit(1)
-    else:
-        print("Data checks passed!")
-
 @hydra.main(config_path=".", config_name="config", version_base="1.3")
 def go(config: DictConfig):
     os.environ["WANDB_PROJECT"] = config["main"]["project_name"]
     os.environ["WANDB_RUN_GROUP"] = config["main"]["experiment_name"]
-
+    
     steps_par = config["main"]["steps"]
     active_steps = steps_par.split(",") if steps_par != "all" else _steps
-
+    
     with tempfile.TemporaryDirectory() as tmp_dir:
-
+        
         if "download" in active_steps:
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
@@ -48,7 +36,7 @@ def go(config: DictConfig):
                     "artifact_description": "Raw file as downloaded",
                 },
             )
-
+        
         if "basic_cleaning" in active_steps:
             basic_cleaning_path = os.path.abspath("src/basic_cleaning")
             mlflow.run(
@@ -63,10 +51,21 @@ def go(config: DictConfig):
                     "max_price": float(config["etl"]["max_price"]),
                 },
             )
-
+        
         if "data_check" in active_steps:
-            data_check_step()
-
+            data_check_path = os.path.abspath("src/data_check")
+            mlflow.run(
+                data_check_path,
+                env_manager="conda",
+                parameters={
+                    "csv": "clean_sample.csv:latest",
+                    "ref": "clean_sample.csv:reference", 
+                    "kl_threshold": config["data_check"]["kl_threshold"],
+                    "min_price": config["data_check"]["min_price"],
+                    "max_price": config["data_check"]["max_price"]
+                },
+            )
+        
         if "data_split" in active_steps:
             data_split_path = os.path.abspath("src/data_split")
             mlflow.run(
@@ -79,12 +78,12 @@ def go(config: DictConfig):
                     "stratify": config["etl"]["stratify_col"],
                 },
             )
-
+        
         if "train_random_forest" in active_steps:
             rf_config = os.path.abspath("rf_config.json")
             with open(rf_config, "w+") as fp:
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
-
+            
             train_rf_path = os.path.abspath("src/train_random_forest")
             mlflow.run(
                 train_rf_path,
