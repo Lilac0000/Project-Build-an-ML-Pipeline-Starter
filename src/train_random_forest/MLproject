@@ -1,30 +1,39 @@
 name: train_random_forest
-
-conda_env: ../../conda.yaml
+conda_env: conda.yml
 
 entry_points:
   main:
     parameters:
       trainval_artifact:
-        description: Train/validation dataset artifact
+        description: Artifact containing the training dataset. It will be split into train and validation
         type: str
-
-      rf_config:
-        description: Path to JSON file with RandomForest configuration
-        type: str
-
-      output_artifact:
-        description: Name for the output model artifact
-        type: str
-
+      val_size:
+        description: Size of the validation split. Fraction of the dataset, or number of items
+        type: float
       random_seed:
-        description: Random seed
+        description: Seed for random number generator
         type: int
         default: 42
+      stratify_by:
+        description: Column to use for stratification
+        type: str
+        default: 'none'
+      rf_config:
+        description: Random forest configuration. A YAML string.
+        type: str
+      max_tfidf_features:
+        description: Maximum number of words to be used in the TFIDF vectorizer
+        type: int
+        default: 10
+      output_artifact:
+        description: Name for the output serialized model
+        type: str
 
-    command: >
-      python run.py \
-        --trainval_artifact ${trainval_artifact} \
-        --rf_config ${rf_config} \
-        --output_artifact ${output_artifact} \
-        --random_seed ${random_seed}
+    command: >-
+      python run.py  --trainval_artifact {trainval_artifact} \
+                     --val_size {val_size} \
+                     --random_seed {random_seed} \
+                     --stratify_by {stratify_by} \
+                     --rf_config {rf_config} \
+                     --max_tfidf_features {max_tfidf_features} \
+                     --output_artifact {output_artifact}
