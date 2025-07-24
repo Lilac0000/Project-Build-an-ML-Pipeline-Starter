@@ -4,74 +4,66 @@ import wandb
 
 
 def pytest_addoption(parser):
-    parser.addoption("--csv", action="store")
-    parser.addoption("--ref", action="store")
-    parser.addoption("--kl_threshold", action="store")
-    parser.addoption("--min_price", action="store")
-    parser.addoption("--max_price", action="store")
+    parser.addoption("--csv", action="store", help="Path to the CSV artifact")
+    parser.addoption("--ref", action="store", help="Path to the reference CSV artifact")
+    parser.addoption("--kl_threshold", action="store", help="KL divergence threshold")
+    parser.addoption("--min_price", action="store", help="Minimum price filter")
+    parser.addoption("--max_price", action="store", help="Maximum price filter")
 
 
 @pytest.fixture(scope='session')
 def data(request):
-    run = wandb.init(
-    project="Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning",
-    entity="nataliashmyreva-western-governors-university",
-    job_type="data_tests",
-    resume=True
-)
-
-
-    # Download input artifact. This will also note that this script is using this
-    # particular version of the artifact
-    data_path = run.use_artifact("clean_data/clean_sample.csv:reference").file()
-
-    if data_path is None:
+    csv_artifact = request.config.getoption("--csv")
+    if not csv_artifact:
         pytest.fail("You must provide the --csv option on the command line")
 
+    run = wandb.init(
+        project="Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning",
+        entity="nataliashmyreva-western-governors-university",
+        job_type="data_tests",
+        resume=True,
+    )
+    data_path = run.use_artifact(csv_artifact).file()
     df = pd.read_csv(data_path)
-
     return df
 
 
 @pytest.fixture(scope='session')
 def ref_data(request):
-    run = wandb.init(job_type="data_tests", resume=True)
-
-    # Download input artifact. This will also note that this script is using this
-    # particular version of the artifact
-    data_path = run.use_artifact(request.config.option.ref).file()
-
-    if data_path is None:
+    ref_artifact = request.config.getoption("--ref")
+    if not ref_artifact:
         pytest.fail("You must provide the --ref option on the command line")
 
+    run = wandb.init(
+        project="Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning",
+        entity="nataliashmyreva-western-governors-university",
+        job_type="data_tests",
+        resume=True,
+    )
+    data_path = run.use_artifact(ref_artifact).file()
     df = pd.read_csv(data_path)
-
     return df
 
 
 @pytest.fixture(scope='session')
 def kl_threshold(request):
-    kl_threshold = request.config.option.kl_threshold
-
-    if kl_threshold is None:
+    kl = request.config.getoption("--kl_threshold")
+    if kl is None:
         pytest.fail("You must provide a threshold for the KL test")
+    return float(kl)
 
-    return float(kl_threshold)
 
 @pytest.fixture(scope='session')
 def min_price(request):
-    min_price = request.config.option.min_price
-
-    if min_price is None:
+    min_p = request.config.getoption("--min_price")
+    if min_p is None:
         pytest.fail("You must provide min_price")
+    return float(min_p)
 
-    return float(min_price)
 
 @pytest.fixture(scope='session')
 def max_price(request):
-    max_price = request.config.option.max_price
-
-    if max_price is None:
+    max_p = request.config.getoption("--max_price")
+    if max_p is None:
         pytest.fail("You must provide max_price")
-
-    return float(max_price)
+    return float(max_p)
