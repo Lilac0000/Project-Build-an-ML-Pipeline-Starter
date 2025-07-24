@@ -30,7 +30,7 @@ def go(config: DictConfig):
         if "download" in active_steps:
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
-                "main",
+                entry_point="main",
                 version="main",
                 env_manager="conda",
                 parameters={
@@ -44,8 +44,9 @@ def go(config: DictConfig):
         # Step 2: Basic Cleaning
         if "basic_cleaning" in active_steps:
             mlflow.run(
-                "./src/basic_cleaning",
-                "main",
+                f"{config['main']['components_repository']}/src/basic_cleaning",
+                entry_point="main",
+                version="main",
                 env_manager="conda",
                 parameters={
                     "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
@@ -60,8 +61,9 @@ def go(config: DictConfig):
         # Step 3: Data Quality Check
         if "data_check" in active_steps:
             mlflow.run(
-                "./src/data_check",
-                "main",
+                f"{config['main']['components_repository']}/src/data_check",
+                entry_point="main",
+                version="main",
                 env_manager="conda",
                 parameters={
                     "csv": "clean_sample.csv:latest",
@@ -74,8 +76,9 @@ def go(config: DictConfig):
         # Step 4: Train/Validation/Test Split
         if "data_split" in active_steps:
             mlflow.run(
-                "./src/data_split",
-                "main",
+                f"{config['main']['components_repository']}/src/data_split",
+                entry_point="main",
+                version="main",
                 env_manager="conda",
                 parameters={
                     "input_artifact": "clean_sample.csv:latest",
@@ -92,8 +95,9 @@ def go(config: DictConfig):
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
             
             mlflow.run(
-                "./src/train_random_forest",
-                "main",
+                f"{config['main']['components_repository']}/src/train_random_forest",
+                entry_point="main",
+                version="main",
                 env_manager="conda",
                 parameters={
                     "trainval_artifact": "trainval.csv:latest",
