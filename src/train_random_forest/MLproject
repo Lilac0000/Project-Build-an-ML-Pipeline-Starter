@@ -1,46 +1,30 @@
-name: download_file
-conda_env: conda.yml
+name: train_random_forest
+
+conda_env: ../../conda.yaml
 
 entry_points:
   main:
     parameters:
-
       trainval_artifact:
-        description: Train dataset
-        type: string
-
-      val_size:
-        description: Size of the validation split. Fraction of the dataset, or number of items
-        type: string
-
-      random_seed:
-        description: Seed for the random number generator. Use this for reproducibility
-        type: string
-        default: 42
-
-      stratify_by:
-        description: Column to use for stratification (if any)
-        type: string
-        default: 'none'
+        description: Train/validation dataset artifact
+        type: str
 
       rf_config:
-        description: Random forest configuration. A path to a JSON file with the configuration that will
-                     be passed to the scikit-learn constructor for RandomForestRegressor.
-        type: string
-
-      max_tfidf_features:
-        description: Maximum number of words to consider for the TFIDF
-        type: string
+        description: Path to JSON file with RandomForest configuration
+        type: str
 
       output_artifact:
-        description: Name for the output artifact
-        type: string
+        description: Name for the output model artifact
+        type: str
 
-    command: >-
-      python run.py --trainval_artifact {trainval_artifact} \
-                    --val_size {val_size} \
-                    --random_seed {random_seed} \
-                    --stratify_by {stratify_by} \
-                    --rf_config {rf_config} \
-                    --max_tfidf_features {max_tfidf_features} \
-                    --output_artifact {output_artifact}
+      random_seed:
+        description: Random seed
+        type: int
+        default: 42
+
+    command: >
+      python run.py \
+        --trainval_artifact ${trainval_artifact} \
+        --rf_config ${rf_config} \
+        --output_artifact ${output_artifact} \
+        --random_seed ${random_seed}
