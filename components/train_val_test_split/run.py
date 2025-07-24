@@ -17,7 +17,7 @@ def go(args):
     run = wandb.init(job_type="train_val_test_split")
     run.config.update(args)
 
-    # Download input artifact. This will also log usage of this artifact version
+    # Download input artifact
     logger.info(f"Fetching artifact {args.input}")
     artifact_local_path = run.use_artifact(args.input).file()
 
@@ -34,14 +34,14 @@ def go(args):
     # Save and log the trainval and test splits as artifacts
     for df_split, split_name in zip([trainval, test], ['trainval', 'test']):
         logger.info(f"Uploading {split_name}_data.csv dataset")
-        with tempfile.NamedTemporaryFile("w") as fp:
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as fp:
             df_split.to_csv(fp.name, index=False)
             log_artifact(
-                name=f"{split_name}_data.csv",
+                filename=fp.name,
                 artifact_type=f"{split_name}_data",
+                artifact_name=f"{split_name}_data.csv",
                 description=f"{split_name} split of dataset",
-                file_path=fp.name,
-                wandb_run=run,
+                wandb_run=run
             )
 
 if __name__ == "__main__":
