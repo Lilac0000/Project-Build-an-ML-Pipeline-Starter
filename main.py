@@ -72,36 +72,39 @@ def go(config: DictConfig):
             )
         
         # Step 4: Train/Validation/Test Split
-        if "data_split" in active_steps:
-            mlflow.run(
-                os.path.abspath("src/data_split"),
-                "main",
-                env_manager="conda",
-                parameters={
-                    "input_artifact": "clean_sample.csv:latest",
-                    "test_size": float(config["etl"]["test_size"]),
-                    "random_state": int(config["etl"]["random_seed"]),
-                    "stratify": config["etl"]["stratify_col"],
-                },
-            )
-        
-        # Step 5: Train Random Forest Model
-        if "train_random_forest" in active_steps:
-            rf_config_path = os.path.join(tmp_dir, "rf_config.json")
-            with open(rf_config_path, "w") as fp:
-                json.dump(dict(config["modeling"]["random_forest"].items()), fp)
-            
-            mlflow.run(
-                os.path.abspath("src/train_random_forest"),
-                "main",
-                env_manager="conda",
-                parameters={
-                    "trainval_artifact": "trainval.csv:latest",
-                    "random_forest_config": rf_config_path,
-                    "val_size": float(config["modeling"]["val_size"]),
-                    "stratify": config["modeling"]["stratify"],
-                },
-            )
+if "data_split" in active_steps:
+    mlflow.run(
+        os.path.abspath("src/data_split"),
+        "main",
+        env_manager="conda",
+        parameters={
+            "input_artifact": "clean_sample.csv:latest",
+            "test_size": float(config["modeling"]["test_size"]),        # changed from etl to modeling
+            "random_seed": int(config["modeling"]["random_seed"]),      # changed from etl to modeling
+            "stratify_by": config["modeling"]["stratify_by"],           # changed key to stratify_by to match run.py
+        },
+    )
+
+# Step 5: Train Random Forest Model
+if "train_random_forest" in active_steps:
+    rf_config_path = os.path.join(tmp_dir, "rf_config.json")
+    with open(rf_config_path, "w") as fp:
+        json.dump(dict(config["modeling"]["random_forest"].items()), fp)
+    
+    mlflow.run(
+        os.path.abspath("src/train_random_forest"),
+        "main",
+        env_manager="conda",
+        parameters={
+            "trainval_artifact": "trainval.csv:latest",
+            "rf_config": rf_config_path,                               # parameter name as per MLproject
+            "val_size": float(config["modeling"]["val_size"]),
+            "stratify_by": config["modeling"]["stratify_by"],
+            "max_tfidf_features": int(config["modeling"]["max_tfidf_features"]),
+            "output_artifact": "random_forest_export",
+        },
+    )
+
 
 if __name__ == "__main__":
     go()
