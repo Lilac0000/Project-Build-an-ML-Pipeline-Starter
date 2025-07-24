@@ -31,7 +31,7 @@ def go(config: DictConfig):
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
                 entry_point="main",
-                version="main",
+                # Remove version for local components
                 env_manager="conda",
                 parameters={
                     "sample": config["etl"]["sample"],
@@ -46,7 +46,7 @@ def go(config: DictConfig):
             mlflow.run(
                 f"{config['main']['components_repository']}/src/basic_cleaning",
                 entry_point="main",
-                version="main",
+                # Remove version for local components
                 env_manager="conda",
                 parameters={
                     "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
@@ -63,7 +63,7 @@ def go(config: DictConfig):
             mlflow.run(
                 f"{config['main']['components_repository']}/src/data_check",
                 entry_point="main",
-                version="main",
+                # Remove version for local components
                 env_manager="conda",
                 parameters={
                     "csv": "clean_sample.csv:latest",
@@ -78,7 +78,7 @@ def go(config: DictConfig):
             mlflow.run(
                 f"{config['main']['components_repository']}/src/data_split",
                 entry_point="main",
-                version="main",
+                # Remove version for local components
                 env_manager="conda",
                 parameters={
                     "input_artifact": "clean_sample.csv:latest",
@@ -97,7 +97,7 @@ def go(config: DictConfig):
             mlflow.run(
                 f"{config['main']['components_repository']}/src/train_random_forest",
                 entry_point="main",
-                version="main",
+                # Remove version for local components
                 env_manager="conda",
                 parameters={
                     "trainval_artifact": "trainval.csv:latest",
