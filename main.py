@@ -22,7 +22,7 @@ def go(config: DictConfig):
     active_steps = steps_par.split(",") if steps_par != "all" else _steps
     
     with tempfile.TemporaryDirectory() as tmp_dir:
-
+        
         if "download" in active_steps:
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
@@ -65,18 +65,39 @@ def go(config: DictConfig):
                     "max_price": config["data_check"]["max_price"]
                 },
             )
-
-    if "data_split" in steps_to_execute:
-        _ = mlflow.run(
-            f"{config['main']['components_repository']}/train_val_test_split",
-            "main",
-            parameters={
-                "input": "clean_sample.csv:latest",
-                "test_size": config["modeling"]["test_size"],
-                "random_seed": config["modeling"]["random_seed"],
-                "stratify_by": config["modeling"]["stratify_by"]
-            },
-        )
+        
+        if "data_split" in active_steps:
+            _ = mlflow.run(
+                f"{config['main']['components_repository']}/train_val_test_split",
+                "main",
+                env_manager="conda",
+                parameters={
+                    "input": "clean_sample.csv:latest",
+                    "test_size": config["modeling"]["test_size"],
+                    "random_seed": config["modeling"]["random_seed"],
+                    "stratify_by": config["modeling"]["stratify_by"]
+                },
+            )
+        
+        if "train_random_forest" in active_steps:
+            # NOTE: we need to serialize the random forest configuration into JSON
+            rf_config = OmegaConf.to_yaml(config["modeling"]["random_forest"])
+            
+            train_rf_path = os.path.abspath("src/train_random_forest")
+            _ = mlflow.run(
+                train_rf_path,
+                "main",
+                env_manager="conda",
+                parameters={
+                    "trainval_artifact": "trainval_data.csv:latest",
+                    "val_size": config["modeling"]["val_size"],
+                    "random_seed": config["modeling"]["random_seed"],
+                    "stratify_by": config["modeling"]["stratify_by"],
+                    "rf_config": rf_config,
+                    "max_tfidf_features": config["modeling"]["max_tfidf_features"],
+                    "output_artifact": "random_forest_export"
+                },
+            )
 
 if __name__ == "__main__":
     go()
