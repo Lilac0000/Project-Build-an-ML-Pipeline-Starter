@@ -43,8 +43,8 @@ def go(args):
     run.config.update(args)
 
     # Get the Random Forest configuration and update W&B
-    with open(args.rf_config) as fp:
-        rf_config = json.load(fp)
+    import yaml
+    rf_config = yaml.safe_load(args.rf_config)
     run.config.update(rf_config)
 
     # Fix the random seed for the Random Forest, so we get reproducible results
