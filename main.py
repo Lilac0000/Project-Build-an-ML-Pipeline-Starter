@@ -1,6 +1,6 @@
 import os
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import json
 import mlflow
 import tempfile
@@ -22,7 +22,7 @@ def go(config: DictConfig):
     active_steps = steps_par.split(",") if steps_par != "all" else _steps
     
     with tempfile.TemporaryDirectory() as tmp_dir:
-        
+
         if "download" in active_steps:
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
@@ -65,36 +65,18 @@ def go(config: DictConfig):
                     "max_price": config["data_check"]["max_price"]
                 },
             )
-        
-        if "data_split" in active_steps:
-            data_split_path = os.path.abspath("src/data_split")
-            mlflow.run(
-                data_split_path,
-                env_manager="conda",
-                parameters={
-                    "input_artifact": "clean_sample.csv:latest",
-                    "test_size": float(config["etl"]["test_size"]),
-                    "random_state": int(config["etl"]["random_seed"]),
-                    "stratify": config["etl"]["stratify_col"],
-                },
-            )
-        
-        if "train_random_forest" in active_steps:
-            rf_config = os.path.abspath("rf_config.json")
-            with open(rf_config, "w+") as fp:
-                json.dump(dict(config["modeling"]["random_forest"].items()), fp)
-            
-            train_rf_path = os.path.abspath("src/train_random_forest")
-            mlflow.run(
-                train_rf_path,
-                env_manager="conda",
-                parameters={
-                    "trainval_artifact": "trainval.csv:latest",
-                    "random_forest_config": rf_config,
-                    "val_size": float(config["modeling"]["val_size"]),
-                    "stratify": config["modeling"]["stratify"],
-                },
-            )
+
+    if "data_split" in steps_to_execute:
+        _ = mlflow.run(
+            f"{config['main']['components_repository']}/train_val_test_split",
+            "main",
+            parameters={
+                "input": "clean_sample.csv:latest",
+                "test_size": config["modeling"]["test_size"],
+                "random_seed": config["modeling"]["random_seed"],
+                "stratify_by": config["modeling"]["stratify_by"]
+            },
+        )
 
 if __name__ == "__main__":
     go()
