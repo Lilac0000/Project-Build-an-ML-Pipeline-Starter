@@ -29,7 +29,7 @@ def go(config: DictConfig):
         # Step 1: Download dataset from artifact hub or URL
         if "download" in active_steps:
             mlflow.run(
-                f"{config['main']['components_repository']}/get_data",
+                f"{config['main']['components_repository']}/components/get_data",
                 entry_point="main",
                 # Remove version for local components
                 env_manager="conda",
@@ -76,7 +76,7 @@ def go(config: DictConfig):
         # Step 4: Train/Validation/Test Split
         if "data_split" in active_steps:
             mlflow.run(
-                f"{config['main']['components_repository']}/src/data_split",
+                f"{config['main']['components_repository']}/components/train_val_test_split",
                 entry_point="main",
                 # Remove version for local components
                 env_manager="conda",
