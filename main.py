@@ -5,6 +5,7 @@ import json
 import mlflow
 import tempfile
 
+# Define the steps of the pipeline
 _steps = [
     "download",
     "basic_cleaning",
@@ -15,14 +16,17 @@ _steps = [
 
 @hydra.main(config_path=".", config_name="config", version_base="1.3")
 def go(config: DictConfig):
+    # Set environment variables for Weights & Biases tracking
     os.environ["WANDB_PROJECT"] = config["main"]["project_name"]
     os.environ["WANDB_RUN_GROUP"] = config["main"]["experiment_name"]
     
+    # Determine which steps to run
     steps_par = config["main"]["steps"]
     active_steps = steps_par.split(",") if steps_par != "all" else _steps
     
     with tempfile.TemporaryDirectory() as tmp_dir:
         
+        # Step 1: Download dataset from artifact hub or URL
         if "download" in active_steps:
             mlflow.run(
                 f"{config['main']['components_repository']}/get_data",
@@ -37,10 +41,11 @@ def go(config: DictConfig):
                 },
             )
         
+        # Step 2: Basic Cleaning
         if "basic_cleaning" in active_steps:
-            basic_cleaning_path = os.path.abspath("src/basic_cleaning")
             mlflow.run(
-                basic_cleaning_path,
+                os.path.abspath("src/basic_cleaning"),
+                "main",
                 env_manager="conda",
                 parameters={
                     "input_artifact": f"{config['main']['entity']}/{config['main']['project_name']}/sample.csv:latest",
@@ -52,24 +57,25 @@ def go(config: DictConfig):
                 },
             )
         
+        # Step 3: Data Quality Check
         if "data_check" in active_steps:
-            data_check_path = os.path.abspath("src/data_check")
             mlflow.run(
-                data_check_path,
+                os.path.abspath("src/data_check"),
+                "main",
                 env_manager="conda",
                 parameters={
                     "csv": "clean_sample.csv:latest",
-                    "ref": "clean_sample.csv:reference", 
                     "kl_threshold": config["data_check"]["kl_threshold"],
-                    "min_price": config["data_check"]["min_price"],
-                    "max_price": config["data_check"]["max_price"]
+                    "min_price": float(config["data_check"]["min_price"]),
+                    "max_price": float(config["data_check"]["max_price"]),
                 },
             )
         
+        # Step 4: Train/Validation/Test Split
         if "data_split" in active_steps:
-            data_split_path = os.path.abspath("src/data_split")
             mlflow.run(
-                data_split_path,
+                os.path.abspath("src/data_split"),
+                "main",
                 env_manager="conda",
                 parameters={
                     "input_artifact": "clean_sample.csv:latest",
@@ -79,18 +85,19 @@ def go(config: DictConfig):
                 },
             )
         
+        # Step 5: Train Random Forest Model
         if "train_random_forest" in active_steps:
-            rf_config = os.path.abspath("rf_config.json")
-            with open(rf_config, "w+") as fp:
+            rf_config_path = os.path.join(tmp_dir, "rf_config.json")
+            with open(rf_config_path, "w") as fp:
                 json.dump(dict(config["modeling"]["random_forest"].items()), fp)
             
-            train_rf_path = os.path.abspath("src/train_random_forest")
             mlflow.run(
-                train_rf_path,
+                os.path.abspath("src/train_random_forest"),
+                "main",
                 env_manager="conda",
                 parameters={
                     "trainval_artifact": "trainval.csv:latest",
-                    "random_forest_config": rf_config,
+                    "random_forest_config": rf_config_path,
                     "val_size": float(config["modeling"]["val_size"]),
                     "stratify": config["modeling"]["stratify"],
                 },
