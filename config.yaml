@@ -1,8 +1,9 @@
 main:
-  components_repository: "./components"  # Change from "." to "./components"
+  components_repository: "https://github.com/Lilac0000/Project-Build-an-ML-Pipeline-Starter.git#components"
   # All the intermediate files will be copied to this directory at the end of the run.
   # Set this to null if you are running in prod
   project_name: Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning
+  entity: nataliashmyreva-western-governors-university
   experiment_name: development
   steps: all
 
