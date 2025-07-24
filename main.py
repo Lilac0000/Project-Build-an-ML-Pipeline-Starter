@@ -25,7 +25,7 @@ def data_check_step():
     else:
         print("Data checks passed!")
 
-@hydra.main(config_path="conf", config_name="config", version_base="1.3")
+@hydra.main(config_path=".", config_name="config", version_base="1.3")
 def go(config: DictConfig):
     os.environ["WANDB_PROJECT"] = config["main"]["project_name"]
     os.environ["WANDB_RUN_GROUP"] = config["main"]["experiment_name"]
