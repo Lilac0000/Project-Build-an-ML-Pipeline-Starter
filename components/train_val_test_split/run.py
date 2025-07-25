@@ -40,6 +40,7 @@ def go(args):
                 filename=fp.name,
                 artifact_type=f"{split_name}_data",
                 artifact_name=f"{split_name}_data.csv",
+                artifact_description=f"{split_name} split of dataset",
                 wandb_run=run
             )
 
