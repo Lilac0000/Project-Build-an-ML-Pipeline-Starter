@@ -10,7 +10,6 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-import mlflow
 import wandb
 
 
@@ -25,14 +24,8 @@ def plot_residuals(model, X, y):
 
 
 def main(args):
-    # Clear any existing MLflow run context
-    mlflow.end_run()
-    
     run = wandb.init(job_type="train_random_forest")
     run.config.update(args)
-
-    # Use the same experiment name as the pipeline
-    mlflow.set_experiment("Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning")
 
     # Load artifact
     artifact_path = run.use_artifact(args.input_artifact).file()
@@ -61,96 +54,80 @@ def main(args):
         ))
     ])
 
-    # Train - Start a new run without specifying run_id
-    with mlflow.start_run(run_id=None):
-        pipe.fit(X_train, y_train)
-        y_pred = pipe.predict(X_val)
-        r2 = r2_score(y_val, y_pred)
-        mae = mean_absolute_error(y_val, y_pred)
+    # Train model
+    print("Training Random Forest model...")
+    pipe.fit(X_train, y_train)
+    print("Training completed!")
 
-        # Log parameters
-        mlflow.log_param("n_estimators", args.n_estimators)
-        mlflow.log_param("max_depth", args.max_depth)
-        mlflow.log_param("min_samples_split", args.min_samples_split)
-        mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
-        mlflow.log_param("val_size", args.val_size)
-        mlflow.log_param("random_seed", args.random_seed)
+    # Make predictions
+    y_pred = pipe.predict(X_val)
+    r2 = r2_score(y_val, y_pred)
+    mae = mean_absolute_error(y_val, y_pred)
 
-        # Log metrics
-        mlflow.log_metric("r2", r2)
-        mlflow.log_metric("mae", mae)
-        run.summary["r2"] = r2
-        run.summary["mae"] = mae
+    print(f"R² Score: {r2:.4f}")
+    print(f"MAE: {mae:.4f}")
 
-        # Feature importance
-        feat_importances = pipe.named_steps["rf"].feature_importances_
-        feat_imp_df = pd.DataFrame({
-            "feature": X_train.columns,
-            "importance": feat_importances
-        }).sort_values("importance", ascending=False)
+    # Log metrics to Wandb
+    run.summary["r2"] = r2
+    run.summary["mae"] = mae
+    run.log({"r2": r2, "mae": mae})
+    
+    # Log hyperparameters
+    run.log({
+        "n_estimators": args.n_estimators,
+        "max_depth": args.max_depth,
+        "min_samples_split": args.min_samples_split,
+        "min_samples_leaf": args.min_samples_leaf,
+        "val_size": args.val_size,
+        "random_seed": args.random_seed
+    })
 
-        fig_feat = plt.figure(figsize=(10, 6))
-        sns.barplot(x="importance", y="feature", data=feat_imp_df)
-        plt.title("Feature Importances")
-        plt.tight_layout()
-        fig_feat.savefig("feature_importance.png")
+    # Feature importance
+    feat_importances = pipe.named_steps["rf"].feature_importances_
+    feat_imp_df = pd.DataFrame({
+        "feature": X_train.columns,
+        "importance": feat_importances
+    }).sort_values("importance", ascending=False)
 
-        # Log feature importance as artifact
-        feat_artifact = wandb.Artifact(
-            "feature_importance", type="image", description="Feature importance plot"
-        )
-        feat_artifact.add_file("feature_importance.png")
-        run.log_artifact(feat_artifact)
+    print("Top 10 Most Important Features:")
+    print(feat_imp_df.head(10))
 
-        # Save model
-        os.makedirs("random_forest_dir", exist_ok=True)
-        with open("random_forest_dir/model.pkl", "wb") as f:
-            pickle.dump(pipe, f)
+    # Create feature importance plot
+    fig_feat = plt.figure(figsize=(10, 8))
+    top_features = feat_imp_df.head(15)  # Show top 15 features
+    sns.barplot(x="importance", y="feature", data=top_features)
+    plt.title("Top 15 Feature Importances")
+    plt.xlabel("Importance")
+    plt.tight_layout()
+    fig_feat.savefig("feature_importance.png", dpi=150, bbox_inches='tight')
 
-        # Log model to MLflow
-        mlflow.sklearn.log_model(pipe, "model")
+    # Log feature importance as artifact
+    feat_artifact = wandb.Artifact(
+        "feature_importance", type="image", description="Feature importance plot"
+    )
+    feat_artifact.add_file("feature_importance.png")
+    run.log_artifact(feat_artifact)
 
-        # Log model artifact to wandb
-        model_artifact = wandb.Artifact(
-            args.output_artifact,
-            type="model_export",
-            description="Trained Random Forest model"
-        )
-        model_artifact.add_dir("random_forest_dir")
-        run.log_artifact(model_artifact)
+    # Create residuals plot
+    fig_resid = plot_residuals(pipe, X_val, y_val)
+    fig_resid.savefig("residuals.png", dpi=150, bbox_inches='tight')
 
-        # Residuals plot
-        fig_resid = plot_residuals(pipe, X_val, y_val)
-        fig_resid.savefig("residuals.png")
+    resid_artifact = wandb.Artifact(
+        "residuals", type="image", description="Model residuals plot"
+    )
+    resid_artifact.add_file("residuals.png")
+    run.log_artifact(resid_artifact)
 
-        resid_artifact = wandb.Artifact(
-            "residuals", type="image", description="Model residuals plot"
-        )
-        resid_artifact.add_file("residuals.png")
-        run.log_artifact(resid_artifact)
+    # Save model
+    print("Saving model...")
+    os.makedirs("random_forest_dir", exist_ok=True)
+    with open("random_forest_dir/model.pkl", "wb") as f:
+        pickle.dump(pipe, f)
 
-        # Log plots to MLflow
-        mlflow.log_artifact("feature_importance.png")
-        mlflow.log_artifact("residuals.png")
+    # Save feature names for later use
+    feature_names = list(X_train.columns)
+    with open("random_forest_dir/feature_names.pkl", "wb") as f:
+        pickle.dump(feature_names, f)
 
-        plt.close('all')  # Close all figures to free memory
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a Random Forest model.")
-
-    parser.add_argument("--input_artifact", type=str, required=True, help="Input data artifact")
-    parser.add_argument("--val_size", type=float, default=0.2, help="Validation set size")
-    parser.add_argument("--random_seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--stratify_by", type=str, default="none", help="Column to stratify by")
-
-    parser.add_argument("--n_estimators", type=int, default=100)
-    parser.add_argument("--max_depth", type=int, default=None)
-    parser.add_argument("--min_samples_split", type=int, default=2)
-    parser.add_argument("--min_samples_leaf", type=int, default=1)
-
-    parser.add_argument("--output_artifact", type=str, required=True, help="Output model artifact name")
-    parser.add_argument("--target", type=str, required=True, help="Target column name")
-
-    args = parser.parse_args()
-    main(args)
+    # Log model artifact to wandb
+    model_artifac
