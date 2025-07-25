@@ -102,83 +102,85 @@ def main(args):
         ))
     ])
 
-    # Train model
-    pipe.fit(X_train, y_train)
-    y_pred = pipe.predict(X_val)
-    r2 = r2_score(y_val, y_pred)
-    mae = mean_absolute_error(y_val, y_pred)
+    # Start MLflow run context here
+    with mlflow.start_run():
+        # Train model
+        pipe.fit(X_train, y_train)
+        y_pred = pipe.predict(X_val)
+        r2 = r2_score(y_val, y_pred)
+        mae = mean_absolute_error(y_val, y_pred)
 
-    print(f"Model performance - R2: {r2:.4f}, MAE: {mae:.4f}")
+        print(f"Model performance - R2: {r2:.4f}, MAE: {mae:.4f}")
 
-    # Log metrics and params to MLflow
-    mlflow.log_metric("r2", r2)
-    mlflow.log_metric("mae", mae)
-    mlflow.log_param("n_estimators", args.n_estimators)
-    mlflow.log_param("max_depth", args.max_depth)
-    mlflow.log_param("min_samples_split", args.min_samples_split)
-    mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
+        # Log metrics and params to MLflow
+        mlflow.log_metric("r2", r2)
+        mlflow.log_metric("mae", mae)
+        mlflow.log_param("n_estimators", args.n_estimators)
+        mlflow.log_param("max_depth", args.max_depth)
+        mlflow.log_param("min_samples_split", args.min_samples_split)
+        mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
 
-    # Log to W&B
-    run.summary["r2"] = r2
-    run.summary["mae"] = mae
-    run.log({"r2": r2, "mae": mae})
-    run.log({"n_estimators": args.n_estimators, "max_depth": args.max_depth})
+        # Log to W&B
+        run.summary["r2"] = r2
+        run.summary["mae"] = mae
+        run.log({"r2": r2, "mae": mae})
+        run.log({"n_estimators": args.n_estimators, "max_depth": args.max_depth})
 
-    # Feature importance plot
-    feat_importances = pipe.named_steps["rf"].feature_importances_
-    feat_imp_df = pd.DataFrame({
-        "feature": X_train.columns,
-        "importance": feat_importances
-    }).sort_values("importance", ascending=False)
+        # Feature importance plot
+        feat_importances = pipe.named_steps["rf"].feature_importances_
+        feat_imp_df = pd.DataFrame({
+            "feature": X_train.columns,
+            "importance": feat_importances
+        }).sort_values("importance", ascending=False)
 
-    print("Top 5 most important features:")
-    print(feat_imp_df.head())
+        print("Top 5 most important features:")
+        print(feat_imp_df.head())
 
-    fig_feat = plt.figure(figsize=(10, 6))
-    sns.barplot(x="importance", y="feature", data=feat_imp_df)
-    plt.title("Feature Importances")
-    plt.tight_layout()
-    fig_feat.savefig("feature_importance.png")
+        fig_feat = plt.figure(figsize=(10, 6))
+        sns.barplot(x="importance", y="feature", data=feat_imp_df)
+        plt.title("Feature Importances")
+        plt.tight_layout()
+        fig_feat.savefig("feature_importance.png")
 
-    # Log feature importance artifact to W&B
-    feat_artifact = wandb.Artifact(
-        "feature_importance", type="image", description="Feature importance plot"
-    )
-    feat_artifact.add_file("feature_importance.png")
-    run.log_artifact(feat_artifact)
+        # Log feature importance artifact to W&B
+        feat_artifact = wandb.Artifact(
+            "feature_importance", type="image", description="Feature importance plot"
+        )
+        feat_artifact.add_file("feature_importance.png")
+        run.log_artifact(feat_artifact)
 
-    # Save model and encoders
-    os.makedirs("random_forest_dir", exist_ok=True)
-    model_export = {
-        "model": pipe,
-        "label_encoders": label_encoders,
-        "numeric_features": numeric_features,
-        "categorical_features": categorical_features
-    }
+        # Save model and encoders
+        os.makedirs("random_forest_dir", exist_ok=True)
+        model_export = {
+            "model": pipe,
+            "label_encoders": label_encoders,
+            "numeric_features": numeric_features,
+            "categorical_features": categorical_features
+        }
 
-    with open("random_forest_dir/model.pkl", "wb") as f:
-        pickle.dump(model_export, f)
+        with open("random_forest_dir/model.pkl", "wb") as f:
+            pickle.dump(model_export, f)
 
-    print("Model saved successfully!")
+        print("Model saved successfully!")
 
-    # Log model artifact
-    model_artifact = wandb.Artifact(
-        args.output_artifact,
-        type="model_export",
-        description="Trained Random Forest model with preprocessors"
-    )
-    model_artifact.add_dir("random_forest_dir")
-    run.log_artifact(model_artifact)
+        # Log model artifact
+        model_artifact = wandb.Artifact(
+            args.output_artifact,
+            type="model_export",
+            description="Trained Random Forest model with preprocessors"
+        )
+        model_artifact.add_dir("random_forest_dir")
+        run.log_artifact(model_artifact)
 
-    # Residuals plot and artifact
-    fig_resid = plot_residuals(pipe, X_val, y_val)
-    fig_resid.savefig("residuals.png")
+        # Residuals plot and artifact
+        fig_resid = plot_residuals(pipe, X_val, y_val)
+        fig_resid.savefig("residuals.png")
 
-    resid_artifact = wandb.Artifact(
-        "residuals", type="image", description="Model residuals plot"
-    )
-    resid_artifact.add_file("residuals.png")
-    run.log_artifact(resid_artifact)
+        resid_artifact = wandb.Artifact(
+            "residuals", type="image", description="Model residuals plot"
+        )
+        resid_artifact.add_file("residuals.png")
+        run.log_artifact(resid_artifact)
 
     # Finish W&B run explicitly
     run.finish()
