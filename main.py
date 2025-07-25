@@ -80,22 +80,22 @@ def go(config: DictConfig):
             )
         
         if "train_random_forest" in active_steps:
-            # NOTE: we need to serialize the random forest configuration into JSON
-            rf_config = OmegaConf.to_yaml(config["modeling"]["random_forest"])
-            
             train_rf_path = os.path.abspath("src/train_random_forest")
             _ = mlflow.run(
                 train_rf_path,
                 "main",
                 env_manager="conda",
                 parameters={
-                    "trainval_artifact": "trainval_data.csv:latest",
+                    "input_artifact": "trainval_data.csv:latest",
                     "val_size": config["modeling"]["val_size"],
                     "random_seed": config["modeling"]["random_seed"],
                     "stratify_by": config["modeling"]["stratify_by"],
-                    "rf_config": rf_config,
-                    "max_tfidf_features": config["modeling"]["max_tfidf_features"],
-                    "output_artifact": "random_forest_export"
+                    "n_estimators": config["modeling"]["random_forest"]["n_estimators"],
+                    "max_depth": config["modeling"]["random_forest"]["max_depth"],
+                    "min_samples_split": config["modeling"]["random_forest"]["min_samples_split"],
+                    "min_samples_leaf": config["modeling"]["random_forest"]["min_samples_leaf"],
+                    "output_artifact": "random_forest_export",
+                    "target": config["modeling"]["target"]
                 },
             )
 
