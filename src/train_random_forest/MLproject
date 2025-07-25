@@ -3,12 +3,13 @@ conda_env: conda.yml
 entry_points:
   main:
     parameters:
-      trainval_artifact:
+      input_artifact:
         description: Artifact containing the training dataset. It will be split into train and validation
         type: str
       val_size:
         description: Size of the validation split. Fraction of the dataset, or number of items
         type: float
+        default: 0.2
       random_seed:
         description: Seed for random number generator
         type: int
@@ -28,15 +29,11 @@ entry_points:
       min_samples_split:
         description: Minimum samples required to split an internal node
         type: int
-        default: 4
+        default: 2
       min_samples_leaf:
         description: Minimum samples required to be at a leaf node
         type: int
-        default: 3
-      max_tfidf_features:
-        description: Maximum number of words to be used in the TFIDF vectorizer
-        type: int
-        default: 10
+        default: 1
       output_artifact:
         description: Name for the output serialized model
         type: str
@@ -45,7 +42,7 @@ entry_points:
         type: str
         default: 'price'
     command: |
-      python run.py --input_artifact {trainval_artifact} \
+      python run.py --input_artifact {input_artifact} \
                     --val_size {val_size} \
                     --random_seed {random_seed} \
                     --stratify_by {stratify_by} \
@@ -53,6 +50,5 @@ entry_points:
                     --max_depth {max_depth} \
                     --min_samples_split {min_samples_split} \
                     --min_samples_leaf {min_samples_leaf} \
-                    --max_tfidf_features {max_tfidf_features} \
                     --output_artifact {output_artifact} \
                     --target {target}
