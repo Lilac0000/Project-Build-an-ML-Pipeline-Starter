@@ -17,9 +17,22 @@ entry_points:
         description: Column to use for stratification
         type: str
         default: 'none'
-      rf_config:
-        description: Random forest configuration. A YAML string.
-        type: str
+      n_estimators:
+        description: Number of trees in the random forest
+        type: int
+        default: 100
+      max_depth:
+        description: Maximum depth of the trees
+        type: int
+        default: 10
+      min_samples_split:
+        description: Minimum samples required to split an internal node
+        type: int
+        default: 4
+      min_samples_leaf:
+        description: Minimum samples required to be at a leaf node
+        type: int
+        default: 3
       max_tfidf_features:
         description: Maximum number of words to be used in the TFIDF vectorizer
         type: int
@@ -31,12 +44,15 @@ entry_points:
         description: Target column name for prediction
         type: str
         default: 'price'
-    command: >-
-      python run.py  --input_artifact {trainval_artifact} \
-                     --val_size {val_size} \
-                     --random_seed {random_seed} \
-                     --stratify_by {stratify_by} \
-                     --rf_config {rf_config} \
-                     --max_tfidf_features {max_tfidf_features} \
-                     --output_artifact {output_artifact} \
-                     --target {target}
+    command: |
+      python run.py --input_artifact {trainval_artifact} \
+                    --val_size {val_size} \
+                    --random_seed {random_seed} \
+                    --stratify_by {stratify_by} \
+                    --n_estimators {n_estimators} \
+                    --max_depth {max_depth} \
+                    --min_samples_split {min_samples_split} \
+                    --min_samples_leaf {min_samples_leaf} \
+                    --max_tfidf_features {max_tfidf_features} \
+                    --output_artifact {output_artifact} \
+                    --target {target}
