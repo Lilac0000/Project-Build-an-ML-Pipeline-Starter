@@ -11,6 +11,7 @@ _steps = [
     "data_check",
     "data_split",
     "train_random_forest",
+    "test_regression_model",
 ]
 
 @hydra.main(config_path=".", config_name="config", version_base="1.3")
