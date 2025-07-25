@@ -11,7 +11,7 @@ _steps = [
     "data_check",
     "data_split",
     "train_random_forest",
-    "test_regression_model",
+    "test_regression_model",  # added here
 ]
 
 @hydra.main(config_path=".", config_name="config", version_base="1.3")
@@ -97,6 +97,18 @@ def go(config: DictConfig):
                     "min_samples_leaf": config["modeling"]["random_forest"]["min_samples_leaf"],
                     "output_artifact": "random_forest_export",
                     "target": config["modeling"]["target"]
+                },
+            )
+
+        if "test_regression_model" in active_steps:
+            test_model_path = os.path.abspath("components/test_regression_model")
+            _ = mlflow.run(
+                test_model_path,
+                "main",
+                env_manager="conda",
+                parameters={
+                    "mlflow_model": "random_forest_export:prod",
+                    "test_dataset": "test_data.csv:latest",
                 },
             )
 
