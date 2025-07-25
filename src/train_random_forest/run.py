@@ -108,6 +108,7 @@ def main(args):
 
         print(f"Model performance - R2: {r2:.4f}, MAE: {mae:.4f}")
 
+        # Log to MLflow
         mlflow.log_metric("r2", r2)
         mlflow.log_metric("mae", mae)
         mlflow.log_param("n_estimators", args.n_estimators)
@@ -115,8 +116,11 @@ def main(args):
         mlflow.log_param("min_samples_split", args.min_samples_split)
         mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
         
+        # Log to W&B (both summary and as metrics)
         run.summary["r2"] = r2
         run.summary["mae"] = mae
+        run.log({"r2": r2, "mae": mae})
+        run.log({"n_estimators": args.n_estimators, "max_depth": args.max_depth})
 
         # Feature importance
         feat_importances = pipe.named_steps["rf"].feature_importances_
