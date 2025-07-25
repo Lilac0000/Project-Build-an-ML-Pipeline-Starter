@@ -25,10 +25,14 @@ def plot_residuals(model, X, y):
 
 
 def main(args):
+    # Clear any existing MLflow run context
+    mlflow.end_run()
+    
     run = wandb.init(job_type="train_random_forest")
     run.config.update(args)
 
-    mlflow.set_experiment("RandomForestRegression")
+    # Use the same experiment name as the pipeline
+    mlflow.set_experiment("Project-Build-an-ML-Pipeline-Starter-src_basic_cleaning")
 
     # Load artifact
     artifact_path = run.use_artifact(args.input_artifact).file()
@@ -57,13 +61,22 @@ def main(args):
         ))
     ])
 
-    # Train
-    with mlflow.start_run():
+    # Train - Start a new run without specifying run_id
+    with mlflow.start_run(run_id=None):
         pipe.fit(X_train, y_train)
         y_pred = pipe.predict(X_val)
         r2 = r2_score(y_val, y_pred)
         mae = mean_absolute_error(y_val, y_pred)
 
+        # Log parameters
+        mlflow.log_param("n_estimators", args.n_estimators)
+        mlflow.log_param("max_depth", args.max_depth)
+        mlflow.log_param("min_samples_split", args.min_samples_split)
+        mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
+        mlflow.log_param("val_size", args.val_size)
+        mlflow.log_param("random_seed", args.random_seed)
+
+        # Log metrics
         mlflow.log_metric("r2", r2)
         mlflow.log_metric("mae", mae)
         run.summary["r2"] = r2
@@ -94,7 +107,10 @@ def main(args):
         with open("random_forest_dir/model.pkl", "wb") as f:
             pickle.dump(pipe, f)
 
-        # Log model artifact
+        # Log model to MLflow
+        mlflow.sklearn.log_model(pipe, "model")
+
+        # Log model artifact to wandb
         model_artifact = wandb.Artifact(
             args.output_artifact,
             type="model_export",
@@ -112,6 +128,12 @@ def main(args):
         )
         resid_artifact.add_file("residuals.png")
         run.log_artifact(resid_artifact)
+
+        # Log plots to MLflow
+        mlflow.log_artifact("feature_importance.png")
+        mlflow.log_artifact("residuals.png")
+
+        plt.close('all')  # Close all figures to free memory
 
 
 if __name__ == "__main__":
