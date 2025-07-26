@@ -28,7 +28,7 @@ def go(args):
     logger.info(f"Files in model artifact: {files_in_artifact}")
     
     # Look for the model file directly in the artifact directory
-    model_file_path = os.path.join(model_local_dir, "model.pkl") 
+    model_file_path = os.path.join(model_local_dir, "model.pkl")
     
     logger.info("Downloading test dataset...")
     test_dataset_path = run.use_artifact(args.test_dataset).file()
@@ -39,7 +39,35 @@ def go(args):
 
     logger.info("Loading model and performing inference...")
     # Load the model directly using joblib since it's a pickle file
-    sk_pipe = joblib.load(model_file_path)
+    loaded_object = joblib.load(model_file_path)
+    
+    # Debug: check what type of object was loaded
+    logger.info(f"Loaded object type: {type(loaded_object)}")
+    logger.info(f"Loaded object keys (if dict): {loaded_object.keys() if isinstance(loaded_object, dict) else 'Not a dict'}")
+    
+    # If it's a dictionary, extract the actual model
+    if isinstance(loaded_object, dict):
+        # Common keys where models are stored
+        if 'model' in loaded_object:
+            sk_pipe = loaded_object['model']
+        elif 'pipeline' in loaded_object:
+            sk_pipe = loaded_object['pipeline']
+        elif 'estimator' in loaded_object:
+            sk_pipe = loaded_object['estimator']
+        else:
+            # Print all keys to see what's available
+            logger.info(f"Available keys: {list(loaded_object.keys())}")
+            # Try the first key that looks like it might contain a model
+            possible_keys = [k for k in loaded_object.keys() if any(word in k.lower() for word in ['model', 'pipe', 'estimator', 'clf', 'regressor'])]
+            if possible_keys:
+                sk_pipe = loaded_object[possible_keys[0]]
+                logger.info(f"Using key: {possible_keys[0]}")
+            else:
+                raise ValueError(f"Could not find model in dictionary. Available keys: {list(loaded_object.keys())}")
+    else:
+        sk_pipe = loaded_object
+    
+    logger.info(f"Final model type: {type(sk_pipe)}")
     
     y_pred = sk_pipe.predict(X_test)
 
