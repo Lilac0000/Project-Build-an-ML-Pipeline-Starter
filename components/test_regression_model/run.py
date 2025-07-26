@@ -9,26 +9,27 @@ import mlflow
 import pandas as pd
 from sklearn.metrics import mean_absolute_error
 import os
-
+import joblib
 from wandb_utils.log_artifact import log_artifact
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger()
 
-
 def go(args):
-
     run = wandb.init(job_type="test_model")
     run.config.update(args)
 
     logger.info("Downloading model artifact from W&B...")
     model_artifact = run.use_artifact(args.mlflow_model, type='model_export')
     model_local_dir = model_artifact.download()
-
-    # 🟢 The exported MLflow model is usually in a subfolder like 'model'
-    model_path = os.path.join(model_local_dir, "model")
-
+    
+    # Check what files are in the artifact directory
+    files_in_artifact = os.listdir(model_local_dir)
+    logger.info(f"Files in model artifact: {files_in_artifact}")
+    
+    # Look for the model file directly in the artifact directory
+    model_file_path = os.path.join(model_local_dir, "model.pkl")
+    
     logger.info("Downloading test dataset...")
     test_dataset_path = run.use_artifact(args.test_dataset).file()
 
@@ -37,7 +38,9 @@ def go(args):
     y_test = X_test.pop("price")
 
     logger.info("Loading model and performing inference...")
-    sk_pipe = mlflow.sklearn.load_model(model_path)
+    # Load the model directly using joblib since it's a pickle file
+    sk_pipe = joblib.load(model_file_path)
+    
     y_pred = sk_pipe.predict(X_test)
 
     logger.info("Scoring model...")
@@ -50,18 +53,16 @@ def go(args):
     run.summary['r2'] = r_squared
     run.summary['mae'] = mae
 
-
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Test the provided model against the test dataset")
-
+    
     parser.add_argument(
         "--mlflow_model",
         type=str,
         help="Input MLFlow model artifact (e.g. 'your-entity/project/model_export:prod')",
         required=True
     )
-
+    
     parser.add_argument(
         "--test_dataset",
         type=str,
@@ -70,5 +71,4 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
     go(args)
