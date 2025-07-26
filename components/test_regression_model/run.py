@@ -23,7 +23,7 @@ def go(args):
     run.config.update(args)
 
     logger.info("Downloading model artifact from W&B...")
-    model_artifact = run.use_artifact(args.mlflow_model, type='model')
+    model_artifact = run.use_artifact(args.mlflow_model, type='model_export')
     model_local_dir = model_artifact.download()
 
     # 🟢 The exported MLflow model is usually in a subfolder like 'model'
