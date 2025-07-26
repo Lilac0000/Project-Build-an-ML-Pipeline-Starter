@@ -34,7 +34,20 @@ def go(args):
     X_test = pd.read_csv(test_dataset_path)
 
     logger.info("Loading model and extracting feature information...")
-    sk_pipe = mlflow.sklearn.load_model(model_local_path)
+    
+    # Try MLflow format first, then fallback to pickle
+    try:
+        sk_pipe = mlflow.sklearn.load_model(model_local_path)
+        logger.info("Loaded model using MLflow format")
+    except FileNotFoundError:
+        # Model was saved as pickle, not MLflow format
+        import pickle
+        model_file = os.path.join(model_local_path, "model.pkl")
+        logger.info(f"MLflow format not found, loading pickle from: {model_file}")
+        
+        with open(model_file, "rb") as fp:
+            sk_pipe = pickle.load(fp)
+        logger.info("Loaded model using pickle format")
     
     # Log what we loaded
     logger.info(f"Loaded object type: {type(sk_pipe)}")
