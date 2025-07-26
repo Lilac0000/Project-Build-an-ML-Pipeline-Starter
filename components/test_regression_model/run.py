@@ -35,40 +35,50 @@ def go(args):
 
     logger.info("Reading test dataset...")
     X_test = pd.read_csv(test_dataset_path)
+    
+    # Extract the target column before preprocessing
     y_test = X_test.pop("price")
-
-    logger.info("Loading model and performing inference...")
+    
+    logger.info("Loading model and extracting feature information...")
     # Load the model directly using joblib since it's a pickle file
     loaded_object = joblib.load(model_file_path)
     
     # Debug: check what type of object was loaded
     logger.info(f"Loaded object type: {type(loaded_object)}")
-    logger.info(f"Loaded object keys (if dict): {loaded_object.keys() if isinstance(loaded_object, dict) else 'Not a dict'}")
+    logger.info(f"Loaded object keys: {loaded_object.keys() if isinstance(loaded_object, dict) else 'Not a dict'}")
     
-    # If it's a dictionary, extract the actual model
+    # If it's a dictionary, extract the actual model and feature info
     if isinstance(loaded_object, dict):
-        # Common keys where models are stored
-        if 'model' in loaded_object:
-            sk_pipe = loaded_object['model']
-        elif 'pipeline' in loaded_object:
-            sk_pipe = loaded_object['pipeline']
-        elif 'estimator' in loaded_object:
-            sk_pipe = loaded_object['estimator']
-        else:
-            # Print all keys to see what's available
-            logger.info(f"Available keys: {list(loaded_object.keys())}")
-            # Try the first key that looks like it might contain a model
-            possible_keys = [k for k in loaded_object.keys() if any(word in k.lower() for word in ['model', 'pipe', 'estimator', 'clf', 'regressor'])]
-            if possible_keys:
-                sk_pipe = loaded_object[possible_keys[0]]
-                logger.info(f"Using key: {possible_keys[0]}")
-            else:
-                raise ValueError(f"Could not find model in dictionary. Available keys: {list(loaded_object.keys())}")
+        sk_pipe = loaded_object['model']
+        numeric_features = loaded_object.get('numeric_features', [])
+        categorical_features = loaded_object.get('categorical_features', [])
+        
+        # Filter the test data to only include the features the model was trained on
+        expected_features = numeric_features + categorical_features
+        logger.info(f"Expected features: {expected_features}")
+        logger.info(f"Test dataset columns before filtering: {list(X_test.columns)}")
+        
+        # Keep only the columns that were used for training
+        missing_features = [f for f in expected_features if f not in X_test.columns]
+        extra_features = [f for f in X_test.columns if f not in expected_features]
+        
+        if missing_features:
+            logger.warning(f"Missing features in test data: {missing_features}")
+        if extra_features:
+            logger.info(f"Removing extra features from test data: {extra_features}")
+        
+        # Select only the features used during training
+        available_features = [f for f in expected_features if f in X_test.columns]
+        X_test = X_test[available_features]
+        logger.info(f"Using features: {available_features}")
+        
     else:
         sk_pipe = loaded_object
     
     logger.info(f"Final model type: {type(sk_pipe)}")
+    logger.info(f"Test data shape after preprocessing: {X_test.shape}")
     
+    logger.info("Performing inference...")
     y_pred = sk_pipe.predict(X_test)
 
     logger.info("Scoring model...")
