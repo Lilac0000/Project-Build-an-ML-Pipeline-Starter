@@ -106,7 +106,7 @@ def go(config: DictConfig):
                 "main",
                 env_manager="conda",
                 parameters={
-                    "mlflow_model": "nataliashmyreva-western-governors-university/Project-Build-an-ML-Pipeline-Starter-src_train_random_forest/random_forest_export:v0",,
+                    "mlflow_model": "nataliashmyreva-western-governors-university/Project-Build-an-ML-Pipeline-Starter-src_train_random_forest/random_forest_export:v0",
                     "test_dataset": "test_data.csv:latest",
                 },
             )
