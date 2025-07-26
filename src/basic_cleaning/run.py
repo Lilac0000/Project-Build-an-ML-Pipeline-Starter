@@ -3,7 +3,6 @@
 This step performs basic data cleaning such as removing outliers
 based on minimum and maximum price constraints.
 """
-
 import argparse
 import logging
 import wandb
@@ -12,16 +11,13 @@ import pandas as pd
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger()
 
-
 def go(args):
-
     run = wandb.init(job_type="basic_cleaning")
     run.config.update(args)
 
     # Download input artifact
     logger.info("Downloading input artifact...")
     artifact_local_path = run.use_artifact(args.input_artifact).file()
-
     df = pd.read_csv(artifact_local_path)
 
     # Filter out outliers
@@ -32,6 +28,11 @@ def go(args):
     # Convert last_review to datetime
     logger.info("Converting 'last_review' to datetime...")
     df['last_review'] = pd.to_datetime(df['last_review'])
+
+    # Filter data to proper geographical boundaries
+    logger.info("Filtering data by geographical boundaries...")
+    idx = df['longitude'].between(-74.25, -73.50) & df['latitude'].between(40.5, 41.2)
+    df = df[idx].copy()
 
     # Save cleaned data
     logger.info("Saving cleaned dataset...")
@@ -46,56 +47,45 @@ def go(args):
     )
     artifact.add_file("clean_sample.csv")
     run.log_artifact(artifact)
-
     logger.info("Cleaned data logged to W&B.")
 
-
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Basic cleaning of the data")
-
     parser.add_argument(
         "--input_artifact", 
         type=str, 
         help="Name of the input artifact to download from W&B",
         
     )
-
     parser.add_argument(
         "--output_artifact", 
         type=str,
         help="Name for the output artifact that will contain the cleaned data",
        
     )
-
     parser.add_argument(
         "--output_type", 
         type=str,
         help="Type of the output artifact, e.g., 'cleaned_data'",
         
     )
-
     parser.add_argument(
         "--output_description", 
         type=str,
         help="Description of the output artifact",
         
     )
-
     parser.add_argument(
         "--min_price", 
         type=float, 
         help="Minimum price to include in the cleaned dataset",
         
     )
-
     parser.add_argument(
         "--max_price", 
         type=float, 
         help="Maximum price to include in the cleaned dataset",
         
     )
-
     args = parser.parse_args()
-
     go(args)
