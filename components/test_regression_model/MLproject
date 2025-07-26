@@ -1,16 +1,14 @@
 name: test_model
 conda_env: conda.yml
-
 entry_points:
   main:
     parameters:
-
       mlflow_model:
         description: An MLflow serialized model
         type: string
-
+        default: "nataliashmyreva-western-governors-university/Project-Build-an-ML-Pipeline-Starter-src_train_random_forest/random_forest_export:v0"
       test_dataset:
         description: The test artifact
         type: string
-
+        default: "test_data.csv:latest"
     command: "python run.py  --mlflow_model {mlflow_model} --test_dataset {test_dataset}"
