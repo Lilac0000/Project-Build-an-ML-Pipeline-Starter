@@ -25,6 +25,10 @@ def plot_residuals(model, X, y):
 
 
 def main(args):
+    # End any active MLflow run to avoid conflicts
+    if mlflow.active_run() is not None:
+        mlflow.end_run()
+
     # Initialize W&B run
     run = wandb.init(job_type="train_random_forest")
     run.config.update(args)
