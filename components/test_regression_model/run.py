@@ -28,7 +28,7 @@ def go(args):
     logger.info(f"Files in model artifact: {files_in_artifact}")
     
     # Look for the model file directly in the artifact directory
-    model_file_path = os.path.join(model_local_dir, "model.pkl")
+    model_file_path = os.path.join(model_local_dir, "model.pkl") 
     
     logger.info("Downloading test dataset...")
     test_dataset_path = run.use_artifact(args.test_dataset).file()
