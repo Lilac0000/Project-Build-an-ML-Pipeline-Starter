@@ -6,17 +6,14 @@ main:
   entity: nataliashmyreva-western-governors-university
   experiment_name: development
   steps: all
-
 etl:
   sample: "sample1.csv"
   min_price: 10  # dollars
   max_price: 350  # dollars
-
 data_check:
   kl_threshold: 0.2
   min_price: 10
   max_price: 350
-
 modeling:
   # Fraction of data to use for test (the remaining will be used for train and validation)
   test_size: 0.2
@@ -34,7 +31,7 @@ modeling:
   target: price
   random_forest:
     n_estimators: 100
-    max_depth: 15
+    max_depth: 10  # Changed from 15 to 10 (best performing hyperparameter)
     min_samples_split: 4
     min_samples_leaf: 3
     # Here -1 means all available cores
