@@ -1,30 +1,36 @@
 #!/usr/bin/env python
 """
 This step trains a random forest model using the provided training data,
-evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow.
+evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow and W&B.
 """
 import sys
-import os  # <-- added missing import
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
+import os
 import argparse
 import logging
 import tempfile
 import pickle
+
 import mlflow
 import mlflow.sklearn
+import wandb
+
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from src.data import load_data, split_data
-from src.preprocessing import preprocess_data
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split
+
+from src.data import load_data
+from src.preprocessing import prepare_features, encode_categorical_features
+from src.visualization import plot_residuals, plot_predictions_vs_actual  # assume you have these helper functions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger(__name__)
+
 
 def safe_mlflow_log(log_func, *args, **kwargs):
     """Safely log to MLflow only if there is an active run."""
@@ -37,59 +43,6 @@ def safe_mlflow_log(log_func, *args, **kwargs):
         logger.warning(f"MLflow logging failed: {e}")
 
 
-def train_model(X_train, y_train, args):
-    model = RandomForestRegressor(
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
-        min_samples_split=args.min_samples_split,
-        min_samples_leaf=args.min_samples_leaf,
-        random_state=args.random_seed,
-        n_jobs=-1
-    )
-    model.fit(X_train, y_train)
-    return model
-
-
-def evaluate_model(model, X_train, y_train, X_val, y_val):
-    y_train_pred = model.predict(X_train)
-    y_val_pred = model.predict(X_val)
-
-    metrics = {
-        "rmse_train": mean_squared_error(y_train, y_train_pred, squared=False),
-        "mae_train": mean_absolute_error(y_train, y_train_pred),
-        "r2_train": r2_score(y_train, y_train_pred),
-        "rmse_val": mean_squared_error(y_val, y_val_pred, squared=False),
-        "mae_val": mean_absolute_error(y_val, y_val_pred),
-        "r2_val": r2_score(y_val, y_val_pred),
-    }
-    return metrics, y_val_pred
-
-
-def create_visualizations(model, X_train, y_val, y_val_pred, feature_names):
-    # Feature importance plot
-    plt.figure(figsize=(10, 6))
-    importances = model.feature_importances_
-    indices = importances.argsort()[::-1]
-    sns.barplot(x=importances[indices], y=[feature_names[i] for i in indices])
-    plt.title("Feature Importances")
-    plt.tight_layout()
-    plt.savefig("feature_importance.png")
-    plt.close()
-
-    # Residuals plot
-    residuals = y_val - y_val_pred
-    plt.figure(figsize=(10, 6))
-    sns.histplot(residuals, kde=True)
-    plt.title("Residuals Distribution")
-    plt.xlabel("Residuals")
-    plt.ylabel("Frequency")
-    plt.tight_layout()
-    plt.savefig("residuals.png")
-    plt.close()
-
-    return importances
-
-
 def main():
     parser = argparse.ArgumentParser(description="Train a Random Forest model.")
     parser.add_argument("--input_artifact", type=str, required=True, help="Path to input CSV file")
@@ -99,105 +52,78 @@ def main():
     parser.add_argument("--max_depth", type=int, default=None, help="Maximum depth of trees")
     parser.add_argument("--min_samples_split", type=int, default=2, help="Min samples required to split")
     parser.add_argument("--min_samples_leaf", type=int, default=1, help="Min samples at a leaf node")
+    parser.add_argument("--stratify_by", type=str, default="none", help="Column to stratify by or 'none'")
+    parser.add_argument("--target", type=str, default="price", help="Target column name")
+    parser.add_argument("--output_artifact", type=str, default="random_forest_export", help="Output artifact name for W&B")
 
     args = parser.parse_args()
 
     logger.info("Loading data...")
     df = load_data(args.input_artifact)
 
-    logger.info("Splitting data...")
-    train_set, val_set = split_data(df, val_size=args.val_size, random_seed=args.random_seed)
+    # Stratify column or None
+    stratify_col = df[args.stratify_by] if args.stratify_by.lower() != "none" else None
 
-    logger.info("Preprocessing data...")
-    X_train, y_train, X_val, y_val, label_encoders, X = preprocess_data(train_set, val_set)
+    logger.info("Splitting train/validation sets...")
+    train, val = train_test_split(
+        df,
+        test_size=args.val_size,
+        stratify=stratify_col,
+        random_state=args.random_seed
+    )
 
-    logger.info("Starting MLflow run...")
-    with mlflow.start_run():
-        logger.info("Training model...")
-        model = train_model(X_train, y_train, args)
+    # Define features to use (customize as needed)
+    numeric_features = [
+        'latitude', 'longitude', 'minimum_nights', 'number_of_reviews',
+        'reviews_per_month', 'calculated_host_listings_count', 'availability_365'
+    ]
+    categorical_features = ['neighbourhood_group', 'room_type']
 
-        logger.info("Evaluating model...")
-        metrics, y_val_pred = evaluate_model(model, X_train, y_train, X_val, y_val)
+    logger.info("Preparing features...")
+    numeric_features, categorical_features = prepare_features(
+        df, numeric_features, categorical_features
+    )
 
-        logger.info("Logging parameters...")
-        mlflow.log_param("n_estimators", args.n_estimators)
-        mlflow.log_param("max_depth", args.max_depth)
-        mlflow.log_param("min_samples_split", args.min_samples_split)
-        mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
-        mlflow.log_param("random_seed", args.random_seed)
-        mlflow.log_param("val_size", args.val_size)
+    # Create copies to avoid SettingWithCopyWarning
+    train = train.copy()
+    val = val.copy()
 
-        logger.info("Logging metrics...")
-        for metric_name, metric_value in metrics.items():
-            mlflow.log_metric(metric_name, metric_value)
+    # Handle missing values for numeric features (example)
+    if 'reviews_per_month' in numeric_features:
+        train['reviews_per_month'] = train['reviews_per_month'].fillna(0)
+        val['reviews_per_month'] = val['reviews_per_month'].fillna(0)
 
-        logger.info("Logging artifacts...")
-        create_visualizations(model, X_train, y_val, y_val_pred, X.columns)
-        mlflow.log_artifact("feature_importance.png")
-        mlflow.log_artifact("residuals.png")
+    X_train_numeric = train[numeric_features]
+    X_val_numeric = val[numeric_features]
 
-<<<<<<< HEAD
-        # Stratify column or None
-        stratify_col = df[args.stratify_by] if args.stratify_by.lower() != "none" else None
+    X_train_cat = train[categorical_features].copy()
+    X_val_cat = val[categorical_features].copy()
 
-        # Split train/val
-        train, val = train_test_split(
-            df, 
-            test_size=args.val_size, 
-            stratify=stratify_col, 
-            random_state=args.random_seed
-        )
+    logger.info("Encoding categorical features...")
+    label_encoders = encode_categorical_features(
+        X_train_cat, X_val_cat, categorical_features
+    )
 
-        # Define features to use
-        numeric_features = [
-            'latitude', 'longitude', 'minimum_nights', 'number_of_reviews',
-            'reviews_per_month', 'calculated_host_listings_count', 'availability_365'
-        ]
-        categorical_features = ['neighbourhood_group', 'room_type']
+    X_train = pd.concat([X_train_numeric, X_train_cat], axis=1)
+    X_val = pd.concat([X_val_numeric, X_val_cat], axis=1)
 
-        # Prepare features (filter existing columns)
-        numeric_features, categorical_features = prepare_features(
-            df, numeric_features, categorical_features
-        )
+    y_train = train[args.target]
+    y_val = val[args.target]
 
-        # Create copies to avoid SettingWithCopyWarning
-        train = train.copy()
-        val = val.copy()
+    logger.info(f"Features used: {X_train.columns.tolist()}")
+    logger.info(f"Training set shape: {X_train.shape}")
+    logger.info(f"Validation set shape: {X_val.shape}")
 
-        # Handle missing values
-        if 'reviews_per_month' in numeric_features:
-            train['reviews_per_month'] = train['reviews_per_month'].fillna(0)
-            val['reviews_per_month'] = val['reviews_per_month'].fillna(0)
+    # Initialize W&B run
+    run = wandb.init(project="Project-Build-an-ML-Pipeline-Starter", job_type="train")
 
-        # Prepare features
-        X_train_numeric = train[numeric_features]
-        X_val_numeric = val[numeric_features]
-
-        X_train_cat = train[categorical_features].copy()
-        X_val_cat = val[categorical_features].copy()
-
-        # Encode categorical features
-        label_encoders = encode_categorical_features(
-            X_train_cat, X_val_cat, categorical_features
-        )
-
-        # Combine features
-        X_train = pd.concat([X_train_numeric, X_train_cat], axis=1)
-        X_val = pd.concat([X_val_numeric, X_val_cat], axis=1)
-
-        y_train = train[args.target]
-        y_val = val[args.target]
-
-        logger.info(f"Features used: {X_train.columns.tolist()}")
-        logger.info(f"Training set shape: {X_train.shape}")
-        logger.info(f"Validation set shape: {X_val.shape}")
-
-        # Build pipeline: scaler + random forest
+    try:
+        # Build pipeline
         pipe = Pipeline([
             ("scaler", StandardScaler()),
             ("rf", RandomForestRegressor(
                 n_estimators=args.n_estimators,
-                max_depth=args.max_depth if args.max_depth > 0 else None,
+                max_depth=args.max_depth if args.max_depth and args.max_depth > 0 else None,
                 min_samples_split=args.min_samples_split,
                 min_samples_leaf=args.min_samples_leaf,
                 random_state=args.random_seed,
@@ -205,18 +131,14 @@ def main():
             ))
         ])
 
-        # Start MLflow run context
-        # MLflow run context already active - removed conflicting start_run
         logger.info("Training model...")
-        
-        # Train model
         pipe.fit(X_train, y_train)
-        
-        # Make predictions
+
+        logger.info("Making predictions...")
         y_pred_train = pipe.predict(X_train)
         y_pred_val = pipe.predict(X_val)
-        
-        # Calculate metrics
+
+        logger.info("Calculating metrics...")
         train_r2 = r2_score(y_train, y_pred_train)
         val_r2 = r2_score(y_val, y_pred_val)
         train_mae = mean_absolute_error(y_train, y_pred_train)
@@ -227,17 +149,7 @@ def main():
         logger.info(f"Training metrics - R2: {train_r2:.4f}, MAE: {train_mae:.4f}, RMSE: {train_rmse:.4f}")
         logger.info(f"Validation metrics - R2: {val_r2:.4f}, MAE: {val_mae:.4f}, RMSE: {val_rmse:.4f}")
 
-        # Log metrics to MLflow
-        safe_mlflow_log(mlflow.log_metrics, {
-            "train_r2": train_r2,
-            "val_r2": val_r2,
-            "train_mae": train_mae,
-            "val_mae": val_mae,
-            "train_rmse": train_rmse,
-            "val_rmse": val_rmse
-        })
-
-        # Log parameters to MLflow
+        # Log parameters & metrics to MLflow
         safe_mlflow_log(mlflow.log_params, {
             "n_estimators": args.n_estimators,
             "max_depth": args.max_depth,
@@ -247,8 +159,16 @@ def main():
             "random_seed": args.random_seed,
             "stratify_by": args.stratify_by
         })
+        safe_mlflow_log(mlflow.log_metrics, {
+            "train_r2": train_r2,
+            "val_r2": val_r2,
+            "train_mae": train_mae,
+            "val_mae": val_mae,
+            "train_rmse": train_rmse,
+            "val_rmse": val_rmse
+        })
 
-        # Log to W&B
+        # Log metrics to W&B
         wandb_metrics = {
             "train_r2": train_r2,
             "val_r2": val_r2,
@@ -257,11 +177,10 @@ def main():
             "train_rmse": train_rmse,
             "val_rmse": val_rmse
         }
-        
         run.summary.update(wandb_metrics)
         run.log(wandb_metrics)
 
-        # Feature importance analysis
+        # Feature importance
         feat_importances = pipe.named_steps["rf"].feature_importances_
         feat_imp_df = pd.DataFrame({
             "feature": X_train.columns,
@@ -271,54 +190,58 @@ def main():
         logger.info("Top 5 most important features:")
         logger.info(feat_imp_df.head().to_string(index=False))
 
-        # Create feature importance plot
+        # Plot and save feature importance
         fig_feat = plt.figure(figsize=(10, 6))
         sns.barplot(data=feat_imp_df.head(10), x="importance", y="feature")
         plt.title("Top 10 Feature Importances")
         plt.xlabel("Importance")
         plt.tight_layout()
-        
-        # Save and log feature importance plot
         fig_feat.savefig("feature_importance.png", dpi=150, bbox_inches='tight')
+        plt.close(fig_feat)
+
         safe_mlflow_log(mlflow.log_artifact, "feature_importance.png")
 
         feat_artifact = wandb.Artifact(
-            "feature_importance", 
-            type="image", 
+            "feature_importance",
+            type="image",
             description="Feature importance plot"
         )
         feat_artifact.add_file("feature_importance.png")
         run.log_artifact(feat_artifact)
 
-        # Create and save residuals plot
-        fig_resid = plot_residuals(pipe, X_val, y_val)
+        # Residuals plot
+        fig_resid = plot_residuals(pipe, X_val, y_val)  # You must define this function in src/visualization.py
         fig_resid.savefig("residuals.png", dpi=150, bbox_inches='tight')
+        plt.close(fig_resid)
+
         safe_mlflow_log(mlflow.log_artifact, "residuals.png")
 
         resid_artifact = wandb.Artifact(
-            "residuals", 
-            type="image", 
+            "residuals",
+            type="image",
             description="Model residuals plot"
         )
         resid_artifact.add_file("residuals.png")
         run.log_artifact(resid_artifact)
 
-        # Create predictions vs actual plot
-        fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)
+        # Predictions vs actual plot
+        fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)  # Define this function as well
         fig_pred.savefig("predictions_vs_actual.png", dpi=150, bbox_inches='tight')
+        plt.close(fig_pred)
+
         safe_mlflow_log(mlflow.log_artifact, "predictions_vs_actual.png")
 
         pred_artifact = wandb.Artifact(
-            "predictions_vs_actual", 
-            type="image", 
+            "predictions_vs_actual",
+            type="image",
             description="Predictions vs actual values plot"
         )
         pred_artifact.add_file("predictions_vs_actual.png")
         run.log_artifact(pred_artifact)
 
-        # Prepare model export
+        # Prepare model export folder
         os.makedirs("random_forest_dir", exist_ok=True)
-        
+
         model_export = {
             "model": pipe,
             "label_encoders": label_encoders,
@@ -333,7 +256,7 @@ def main():
             }
         }
 
-        # Save model
+        # Save model pickle
         model_path = "random_forest_dir/model.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(model_export, f)
@@ -341,11 +264,10 @@ def main():
         logger.info(f"Model saved to {model_path}")
 
         # Log model to MLflow
-        safe_mlflow_log(mlflow.sklearn.log_model, 
-            pipe, 
-            "random_forest_model",
-            registered_model_name="RandomForestRegressor"
-        )
+        safe_mlflow_log(mlflow.sklearn.log_model,
+                        pipe,
+                        "random_forest_model",
+                        registered_model_name="RandomForestRegressor")
 
         # Log model artifact to W&B
         model_artifact = wandb.Artifact(
@@ -360,33 +282,13 @@ def main():
 
     except Exception as e:
         logger.error(f"Error during training: {str(e)}")
-        if 'run' in locals():
-            run.finish(exit_code=1)
+        run.finish(exit_code=1)
         raise e
 
     finally:
-        # Ensure W&B run is finished
-        if 'run' in locals():
-            run.finish()
-        
-        # Ensure MLflow run is ended
+        run.finish()
         if mlflow.active_run():
             mlflow.end_run()
-=======
-        logger.info("Saving model and logging it...")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, "random_forest_model.pkl")
-            model_data = {
-                "model": model,
-                "label_encoders": label_encoders,
-                "feature_names": list(X.columns),
-            }
-            with open(model_path, "wb") as f:
-                pickle.dump(model_data, f)
-
-            mlflow.log_artifact(model_path)
-            mlflow.sklearn.log_model(model, "model")
->>>>>>> 28f79337f0c363b906adae24bd814dcd3e71a068
 
 
 if __name__ == "__main__":
