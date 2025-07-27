@@ -3,6 +3,9 @@
 This step trains a random forest model using the provided training data,
 evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow.
 """
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import argparse
 import logging
