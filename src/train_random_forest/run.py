@@ -1,21 +1,29 @@
+#!/usr/bin/env python
+"""
+This step trains a random forest model using the provided training data,
+evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow.
+"""
+import sys
+import os  # <-- added missing import
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 import argparse
-import os
-import pickle
 import logging
-
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+import tempfile
+import pickle
 import mlflow
-import wandb
+import mlflow.sklearn
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+from src.data import load_data, split_data
+from src.preprocessing import preprocess_data
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger(__name__)
 
 def safe_mlflow_log(log_func, *args, **kwargs):
@@ -29,115 +37,106 @@ def safe_mlflow_log(log_func, *args, **kwargs):
         logger.warning(f"MLflow logging failed: {e}")
 
 
-def plot_residuals(model, X, y):
-    """Plot residuals histogram for model evaluation."""
-    y_pred = model.predict(X)
-    residuals = y - y_pred
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.histplot(residuals, bins=50, kde=True, ax=ax)
-    ax.set_title("Residuals Histogram")
-    ax.set_xlabel("Residuals")
-    ax.set_ylabel("Frequency")
-    return fig
+def train_model(X_train, y_train, args):
+    model = RandomForestRegressor(
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+        min_samples_split=args.min_samples_split,
+        min_samples_leaf=args.min_samples_leaf,
+        random_state=args.random_seed,
+        n_jobs=-1
+    )
+    model.fit(X_train, y_train)
+    return model
 
 
-def plot_predictions_vs_actual(model, X, y):
-    """Plot predictions vs actual values."""
-    y_pred = model.predict(X)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(y, y_pred, alpha=0.5)
-    ax.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', lw=2)
-    ax.set_xlabel("Actual Values")
-    ax.set_ylabel("Predicted Values")
-    ax.set_title("Predictions vs Actual Values")
-    return fig
+def evaluate_model(model, X_train, y_train, X_val, y_val):
+    y_train_pred = model.predict(X_train)
+    y_val_pred = model.predict(X_val)
+
+    metrics = {
+        "rmse_train": mean_squared_error(y_train, y_train_pred, squared=False),
+        "mae_train": mean_absolute_error(y_train, y_train_pred),
+        "r2_train": r2_score(y_train, y_train_pred),
+        "rmse_val": mean_squared_error(y_val, y_val_pred, squared=False),
+        "mae_val": mean_absolute_error(y_val, y_val_pred),
+        "r2_val": r2_score(y_val, y_val_pred),
+    }
+    return metrics, y_val_pred
 
 
-def validate_inputs(df, args):
-    """Validate input data and arguments."""
-    if args.target not in df.columns:
-        raise ValueError(f"Target column '{args.target}' not found in dataset columns: {df.columns.tolist()}")
-    
-    if args.stratify_by.lower() != "none" and args.stratify_by not in df.columns:
-        raise ValueError(f"Stratify column '{args.stratify_by}' not found in dataset")
-    
-    if args.val_size <= 0 or args.val_size >= 1:
-        raise ValueError("Validation size must be between 0 and 1")
-    
-    logger.info(f"Input validation passed. Dataset shape: {df.shape}")
+def create_visualizations(model, X_train, y_val, y_val_pred, feature_names):
+    # Feature importance plot
+    plt.figure(figsize=(10, 6))
+    importances = model.feature_importances_
+    indices = importances.argsort()[::-1]
+    sns.barplot(x=importances[indices], y=[feature_names[i] for i in indices])
+    plt.title("Feature Importances")
+    plt.tight_layout()
+    plt.savefig("feature_importance.png")
+    plt.close()
+
+    # Residuals plot
+    residuals = y_val - y_val_pred
+    plt.figure(figsize=(10, 6))
+    sns.histplot(residuals, kde=True)
+    plt.title("Residuals Distribution")
+    plt.xlabel("Residuals")
+    plt.ylabel("Frequency")
+    plt.tight_layout()
+    plt.savefig("residuals.png")
+    plt.close()
+
+    return importances
 
 
-def prepare_features(df, numeric_features, categorical_features):
-    """Prepare and validate features exist in dataset."""
-    # Filter only existing columns
-    existing_numeric = [col for col in numeric_features if col in df.columns]
-    existing_categorical = [col for col in categorical_features if col in df.columns]
-    
-    missing_numeric = set(numeric_features) - set(existing_numeric)
-    missing_categorical = set(categorical_features) - set(existing_categorical)
-    
-    if missing_numeric:
-        logger.warning(f"Missing numeric features: {missing_numeric}")
-    if missing_categorical:
-        logger.warning(f"Missing categorical features: {missing_categorical}")
-    
-    logger.info(f"Using numeric features: {existing_numeric}")
-    logger.info(f"Using categorical features: {existing_categorical}")
-    
-    return existing_numeric, existing_categorical
+def main():
+    parser = argparse.ArgumentParser(description="Train a Random Forest model.")
+    parser.add_argument("--input_artifact", type=str, required=True, help="Path to input CSV file")
+    parser.add_argument("--val_size", type=float, default=0.2, help="Validation set size")
+    parser.add_argument("--random_seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--n_estimators", type=int, default=100, help="Number of trees in forest")
+    parser.add_argument("--max_depth", type=int, default=None, help="Maximum depth of trees")
+    parser.add_argument("--min_samples_split", type=int, default=2, help="Min samples required to split")
+    parser.add_argument("--min_samples_leaf", type=int, default=1, help="Min samples at a leaf node")
 
+    args = parser.parse_args()
 
-def encode_categorical_features(X_train_cat, X_val_cat, categorical_features):
-    """Encode categorical features with proper handling of unseen categories."""
-    label_encoders = {}
-    
-    for col in categorical_features:
-        le = LabelEncoder()
-        
-        # Combine train and validation to handle unseen categories
-        combined_cats = pd.concat([
-            X_train_cat[col].astype(str), 
-            X_val_cat[col].astype(str)
-        ]).unique()
-        
-        le.fit(combined_cats)
-        
-        # Transform both sets
-        X_train_cat[col] = le.transform(X_train_cat[col].astype(str))
-        X_val_cat[col] = le.transform(X_val_cat[col].astype(str))
-        
-        label_encoders[col] = le
-        logger.info(f"Encoded {col}: {len(le.classes_)} unique categories")
-    
-    return label_encoders
+    logger.info("Loading data...")
+    df = load_data(args.input_artifact)
 
+    logger.info("Splitting data...")
+    train_set, val_set = split_data(df, val_size=args.val_size, random_seed=args.random_seed)
 
-def main(args):
-    try:
-        # End any active MLflow run to avoid conflicts
-        if mlflow.active_run() is not None:
-            logger.info("Ending existing MLflow run")
-            mlflow.end_run()
+    logger.info("Preprocessing data...")
+    X_train, y_train, X_val, y_val, label_encoders, X = preprocess_data(train_set, val_set)
 
-        # Initialize W&B run
-        run = wandb.init(job_type="train_random_forest")
-        run.config.update(vars(args))
+    logger.info("Starting MLflow run...")
+    with mlflow.start_run():
+        logger.info("Training model...")
+        model = train_model(X_train, y_train, args)
 
-        # Set MLflow experiment
-        mlflow.set_experiment("RandomForestRegression")
+        logger.info("Evaluating model...")
+        metrics, y_val_pred = evaluate_model(model, X_train, y_train, X_val, y_val)
 
-        # Load input artifact data
-        logger.info(f"Loading artifact: {args.input_artifact}")
-        artifact_path = run.use_artifact(args.input_artifact).file()
-        df = pd.read_csv(artifact_path)
+        logger.info("Logging parameters...")
+        mlflow.log_param("n_estimators", args.n_estimators)
+        mlflow.log_param("max_depth", args.max_depth)
+        mlflow.log_param("min_samples_split", args.min_samples_split)
+        mlflow.log_param("min_samples_leaf", args.min_samples_leaf)
+        mlflow.log_param("random_seed", args.random_seed)
+        mlflow.log_param("val_size", args.val_size)
 
-        logger.info("Training Random Forest model...")
-        logger.info(f"Dataset shape: {df.shape}")
-        logger.info(f"Columns: {df.columns.tolist()}")
+        logger.info("Logging metrics...")
+        for metric_name, metric_value in metrics.items():
+            mlflow.log_metric(metric_name, metric_value)
 
-        # Validate inputs
-        validate_inputs(df, args)
+        logger.info("Logging artifacts...")
+        create_visualizations(model, X_train, y_val, y_val_pred, X.columns)
+        mlflow.log_artifact("feature_importance.png")
+        mlflow.log_artifact("residuals.png")
 
+<<<<<<< HEAD
         # Stratify column or None
         stratify_col = df[args.stratify_by] if args.stratify_by.lower() != "none" else None
 
@@ -373,78 +372,22 @@ def main(args):
         # Ensure MLflow run is ended
         if mlflow.active_run():
             mlflow.end_run()
+=======
+        logger.info("Saving model and logging it...")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = os.path.join(temp_dir, "random_forest_model.pkl")
+            model_data = {
+                "model": model,
+                "label_encoders": label_encoders,
+                "feature_names": list(X.columns),
+            }
+            with open(model_path, "wb") as f:
+                pickle.dump(model_data, f)
+
+            mlflow.log_artifact(model_path)
+            mlflow.sklearn.log_model(model, "model")
+>>>>>>> 28f79337f0c363b906adae24bd814dcd3e71a068
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Train a Random Forest model for regression tasks."
-    )
-
-    # Data arguments
-    parser.add_argument(
-        "--input_artifact", 
-        type=str, 
-        required=True, 
-        help="Input data artifact name"
-    )
-    parser.add_argument(
-        "--target", 
-        type=str, 
-        required=True, 
-        help="Target column name for regression"
-    )
-    parser.add_argument(
-        "--output_artifact", 
-        type=str, 
-        required=True, 
-        help="Output model artifact name"
-    )
-
-    # Split arguments
-    parser.add_argument(
-        "--val_size", 
-        type=float, 
-        default=0.2, 
-        help="Validation set size (0.0 to 1.0)"
-    )
-    parser.add_argument(
-        "--random_seed", 
-        type=int, 
-        default=42, 
-        help="Random seed for reproducibility"
-    )
-    parser.add_argument(
-        "--stratify_by", 
-        type=str, 
-        default="none", 
-        help="Column to stratify by (or 'none')"
-    )
-
-    # Model hyperparameters
-    parser.add_argument(
-        "--n_estimators", 
-        type=int, 
-        default=100, 
-        help="Number of trees in the forest"
-    )
-    parser.add_argument(
-        "--max_depth", 
-        type=int, 
-        default=10, 
-        help="Maximum depth of trees (0 for unlimited)"
-    )
-    parser.add_argument(
-        "--min_samples_split", 
-        type=int, 
-        default=2, 
-        help="Minimum samples required to split a node"
-    )
-    parser.add_argument(
-        "--min_samples_leaf", 
-        type=int, 
-        default=1, 
-        help="Minimum samples required at a leaf node"
-    )
-
-    args = parser.parse_args()
-    main(args)
+    main()
