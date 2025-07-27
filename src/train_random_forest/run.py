@@ -4,13 +4,13 @@ This step trains a random forest model using the provided training data,
 evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow.
 """
 import sys
+import os  # <-- added missing import
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import argparse
 import logging
 import tempfile
-import os
 import pickle
 import mlflow
 import mlflow.sklearn
@@ -64,6 +64,7 @@ def create_visualizations(model, X_train, y_val, y_val_pred, feature_names):
     plt.title("Feature Importances")
     plt.tight_layout()
     plt.savefig("feature_importance.png")
+    plt.close()
 
     # Residuals plot
     residuals = y_val - y_val_pred
@@ -74,6 +75,7 @@ def create_visualizations(model, X_train, y_val, y_val_pred, feature_names):
     plt.ylabel("Frequency")
     plt.tight_layout()
     plt.savefig("residuals.png")
+    plt.close()
 
     return importances
 
@@ -100,7 +102,7 @@ def main():
     X_train, y_train, X_val, y_val, label_encoders, X = preprocess_data(train_set, val_set)
 
     logger.info("Starting MLflow run...")
-    with mlflow.start_run(nested=True):
+    with mlflow.start_run():
         logger.info("Training model...")
         model = train_model(X_train, y_train, args)
 
@@ -121,20 +123,21 @@ def main():
 
         logger.info("Logging artifacts...")
         create_visualizations(model, X_train, y_val, y_val_pred, X.columns)
-        mlflow.log_artifact('feature_importance.png')
-        mlflow.log_artifact('residuals.png')
+        mlflow.log_artifact("feature_importance.png")
+        mlflow.log_artifact("residuals.png")
 
         logger.info("Saving model and logging it...")
         with tempfile.TemporaryDirectory() as temp_dir:
             model_path = os.path.join(temp_dir, "random_forest_model.pkl")
             model_data = {
-                'model': model,
-                'label_encoders': label_encoders,
-                'feature_names': list(X.columns)
+                "model": model,
+                "label_encoders": label_encoders,
+                "feature_names": list(X.columns),
             }
-            with open(model_path, 'wb') as f:
+            with open(model_path, "wb") as f:
                 pickle.dump(model_data, f)
 
+            mlflow.log_artifact(model_path)
             mlflow.sklearn.log_model(model, "model")
 
 
