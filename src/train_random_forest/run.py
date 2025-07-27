@@ -18,6 +18,16 @@ import wandb
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def safe_mlflow_log(log_func, *args, **kwargs):
+    """Safely log to MLflow only if there is an active run."""
+    try:
+        if mlflow.active_run():
+            return log_func(*args, **kwargs)
+        else:
+            logger.warning("No active MLflow run - skipping MLflow logging")
+    except Exception as e:
+        logger.warning(f"MLflow logging failed: {e}")
+
 
 def plot_residuals(model, X, y):
     """Plot residuals histogram for model evaluation."""
@@ -197,157 +207,157 @@ def main(args):
         ])
 
         # Start MLflow run context
-        with mlflow.start_run():
-            logger.info("Training model...")
-            
-            # Train model
-            pipe.fit(X_train, y_train)
-            
-            # Make predictions
-            y_pred_train = pipe.predict(X_train)
-            y_pred_val = pipe.predict(X_val)
-            
-            # Calculate metrics
-            train_r2 = r2_score(y_train, y_pred_train)
-            val_r2 = r2_score(y_val, y_pred_val)
-            train_mae = mean_absolute_error(y_train, y_pred_train)
-            val_mae = mean_absolute_error(y_val, y_pred_val)
-            train_rmse = mean_squared_error(y_train, y_pred_train, squared=False)
-            val_rmse = mean_squared_error(y_val, y_pred_val, squared=False)
+        # MLflow run context already active - removed conflicting start_run
+        logger.info("Training model...")
+        
+        # Train model
+        pipe.fit(X_train, y_train)
+        
+        # Make predictions
+        y_pred_train = pipe.predict(X_train)
+        y_pred_val = pipe.predict(X_val)
+        
+        # Calculate metrics
+        train_r2 = r2_score(y_train, y_pred_train)
+        val_r2 = r2_score(y_val, y_pred_val)
+        train_mae = mean_absolute_error(y_train, y_pred_train)
+        val_mae = mean_absolute_error(y_val, y_pred_val)
+        train_rmse = mean_squared_error(y_train, y_pred_train, squared=False)
+        val_rmse = mean_squared_error(y_val, y_pred_val, squared=False)
 
-            logger.info(f"Training metrics - R2: {train_r2:.4f}, MAE: {train_mae:.4f}, RMSE: {train_rmse:.4f}")
-            logger.info(f"Validation metrics - R2: {val_r2:.4f}, MAE: {val_mae:.4f}, RMSE: {val_rmse:.4f}")
+        logger.info(f"Training metrics - R2: {train_r2:.4f}, MAE: {train_mae:.4f}, RMSE: {train_rmse:.4f}")
+        logger.info(f"Validation metrics - R2: {val_r2:.4f}, MAE: {val_mae:.4f}, RMSE: {val_rmse:.4f}")
 
-            # Log metrics to MLflow
-            mlflow.log_metrics({
-                "train_r2": train_r2,
+        # Log metrics to MLflow
+        safe_mlflow_log(mlflow.log_metrics, {
+            "train_r2": train_r2,
+            "val_r2": val_r2,
+            "train_mae": train_mae,
+            "val_mae": val_mae,
+            "train_rmse": train_rmse,
+            "val_rmse": val_rmse
+        })
+
+        # Log parameters to MLflow
+        safe_mlflow_log(mlflow.log_params, {
+            "n_estimators": args.n_estimators,
+            "max_depth": args.max_depth,
+            "min_samples_split": args.min_samples_split,
+            "min_samples_leaf": args.min_samples_leaf,
+            "val_size": args.val_size,
+            "random_seed": args.random_seed,
+            "stratify_by": args.stratify_by
+        })
+
+        # Log to W&B
+        wandb_metrics = {
+            "train_r2": train_r2,
+            "val_r2": val_r2,
+            "train_mae": train_mae,
+            "val_mae": val_mae,
+            "train_rmse": train_rmse,
+            "val_rmse": val_rmse
+        }
+        
+        run.summary.update(wandb_metrics)
+        run.log(wandb_metrics)
+
+        # Feature importance analysis
+        feat_importances = pipe.named_steps["rf"].feature_importances_
+        feat_imp_df = pd.DataFrame({
+            "feature": X_train.columns,
+            "importance": feat_importances
+        }).sort_values("importance", ascending=False)
+
+        logger.info("Top 5 most important features:")
+        logger.info(feat_imp_df.head().to_string(index=False))
+
+        # Create feature importance plot
+        fig_feat = plt.figure(figsize=(10, 6))
+        sns.barplot(data=feat_imp_df.head(10), x="importance", y="feature")
+        plt.title("Top 10 Feature Importances")
+        plt.xlabel("Importance")
+        plt.tight_layout()
+        
+        # Save and log feature importance plot
+        fig_feat.savefig("feature_importance.png", dpi=150, bbox_inches='tight')
+        safe_mlflow_log(mlflow.log_artifact, "feature_importance.png")
+
+        feat_artifact = wandb.Artifact(
+            "feature_importance", 
+            type="image", 
+            description="Feature importance plot"
+        )
+        feat_artifact.add_file("feature_importance.png")
+        run.log_artifact(feat_artifact)
+
+        # Create and save residuals plot
+        fig_resid = plot_residuals(pipe, X_val, y_val)
+        fig_resid.savefig("residuals.png", dpi=150, bbox_inches='tight')
+        safe_mlflow_log(mlflow.log_artifact, "residuals.png")
+
+        resid_artifact = wandb.Artifact(
+            "residuals", 
+            type="image", 
+            description="Model residuals plot"
+        )
+        resid_artifact.add_file("residuals.png")
+        run.log_artifact(resid_artifact)
+
+        # Create predictions vs actual plot
+        fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)
+        fig_pred.savefig("predictions_vs_actual.png", dpi=150, bbox_inches='tight')
+        safe_mlflow_log(mlflow.log_artifact, "predictions_vs_actual.png")
+
+        pred_artifact = wandb.Artifact(
+            "predictions_vs_actual", 
+            type="image", 
+            description="Predictions vs actual values plot"
+        )
+        pred_artifact.add_file("predictions_vs_actual.png")
+        run.log_artifact(pred_artifact)
+
+        # Prepare model export
+        os.makedirs("random_forest_dir", exist_ok=True)
+        
+        model_export = {
+            "model": pipe,
+            "label_encoders": label_encoders,
+            "numeric_features": numeric_features,
+            "categorical_features": categorical_features,
+            "feature_names": X_train.columns.tolist(),
+            "target_column": args.target,
+            "model_metrics": {
                 "val_r2": val_r2,
-                "train_mae": train_mae,
                 "val_mae": val_mae,
-                "train_rmse": train_rmse,
-                "val_rmse": val_rmse
-            })
-
-            # Log parameters to MLflow
-            mlflow.log_params({
-                "n_estimators": args.n_estimators,
-                "max_depth": args.max_depth,
-                "min_samples_split": args.min_samples_split,
-                "min_samples_leaf": args.min_samples_leaf,
-                "val_size": args.val_size,
-                "random_seed": args.random_seed,
-                "stratify_by": args.stratify_by
-            })
-
-            # Log to W&B
-            wandb_metrics = {
-                "train_r2": train_r2,
-                "val_r2": val_r2,
-                "train_mae": train_mae,
-                "val_mae": val_mae,
-                "train_rmse": train_rmse,
                 "val_rmse": val_rmse
             }
-            
-            run.summary.update(wandb_metrics)
-            run.log(wandb_metrics)
+        }
 
-            # Feature importance analysis
-            feat_importances = pipe.named_steps["rf"].feature_importances_
-            feat_imp_df = pd.DataFrame({
-                "feature": X_train.columns,
-                "importance": feat_importances
-            }).sort_values("importance", ascending=False)
+        # Save model
+        model_path = "random_forest_dir/model.pkl"
+        with open(model_path, "wb") as f:
+            pickle.dump(model_export, f)
 
-            logger.info("Top 5 most important features:")
-            logger.info(feat_imp_df.head().to_string(index=False))
+        logger.info(f"Model saved to {model_path}")
 
-            # Create feature importance plot
-            fig_feat = plt.figure(figsize=(10, 6))
-            sns.barplot(data=feat_imp_df.head(10), x="importance", y="feature")
-            plt.title("Top 10 Feature Importances")
-            plt.xlabel("Importance")
-            plt.tight_layout()
-            
-            # Save and log feature importance plot
-            fig_feat.savefig("feature_importance.png", dpi=150, bbox_inches='tight')
-            mlflow.log_artifact("feature_importance.png")
+        # Log model to MLflow
+        safe_mlflow_log(mlflow.sklearn.log_model, 
+            pipe, 
+            "random_forest_model",
+            registered_model_name="RandomForestRegressor"
+        )
 
-            feat_artifact = wandb.Artifact(
-                "feature_importance", 
-                type="image", 
-                description="Feature importance plot"
-            )
-            feat_artifact.add_file("feature_importance.png")
-            run.log_artifact(feat_artifact)
+        # Log model artifact to W&B
+        model_artifact = wandb.Artifact(
+            args.output_artifact,
+            type="model_export",
+            description="Trained Random Forest model with preprocessors and metadata"
+        )
+        model_artifact.add_dir("random_forest_dir")
+        run.log_artifact(model_artifact)
 
-            # Create and save residuals plot
-            fig_resid = plot_residuals(pipe, X_val, y_val)
-            fig_resid.savefig("residuals.png", dpi=150, bbox_inches='tight')
-            mlflow.log_artifact("residuals.png")
-
-            resid_artifact = wandb.Artifact(
-                "residuals", 
-                type="image", 
-                description="Model residuals plot"
-            )
-            resid_artifact.add_file("residuals.png")
-            run.log_artifact(resid_artifact)
-
-            # Create predictions vs actual plot
-            fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)
-            fig_pred.savefig("predictions_vs_actual.png", dpi=150, bbox_inches='tight')
-            mlflow.log_artifact("predictions_vs_actual.png")
-
-            pred_artifact = wandb.Artifact(
-                "predictions_vs_actual", 
-                type="image", 
-                description="Predictions vs actual values plot"
-            )
-            pred_artifact.add_file("predictions_vs_actual.png")
-            run.log_artifact(pred_artifact)
-
-            # Prepare model export
-            os.makedirs("random_forest_dir", exist_ok=True)
-            
-            model_export = {
-                "model": pipe,
-                "label_encoders": label_encoders,
-                "numeric_features": numeric_features,
-                "categorical_features": categorical_features,
-                "feature_names": X_train.columns.tolist(),
-                "target_column": args.target,
-                "model_metrics": {
-                    "val_r2": val_r2,
-                    "val_mae": val_mae,
-                    "val_rmse": val_rmse
-                }
-            }
-
-            # Save model
-            model_path = "random_forest_dir/model.pkl"
-            with open(model_path, "wb") as f:
-                pickle.dump(model_export, f)
-
-            logger.info(f"Model saved to {model_path}")
-
-            # Log model to MLflow
-            mlflow.sklearn.log_model(
-                pipe, 
-                "random_forest_model",
-                registered_model_name="RandomForestRegressor"
-            )
-
-            # Log model artifact to W&B
-            model_artifact = wandb.Artifact(
-                args.output_artifact,
-                type="model_export",
-                description="Trained Random Forest model with preprocessors and metadata"
-            )
-            model_artifact.add_dir("random_forest_dir")
-            run.log_artifact(model_artifact)
-
-            logger.info("Model training completed successfully!")
+        logger.info("Model training completed successfully!")
 
     except Exception as e:
         logger.error(f"Error during training: {str(e)}")
