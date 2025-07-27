@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 """
-This step trains a random forest model using the provided training data,
-evaluates it, and logs parameters, metrics, artifacts, and the model to MLflow and W&B.
+Train a Random Forest regression model, evaluate it, and log parameters, metrics, and artifacts to MLflow and Weights & Biases (W&B).
 """
+
 import sys
 import os
 import argparse
 import logging
-import tempfile
 import pickle
 
 import mlflow
@@ -24,9 +23,12 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import train_test_split
 
+# Ensure src folder is in path if running as a script
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from src.data import load_data
 from src.preprocessing import prepare_features, encode_categorical_features
-from src.visualization import plot_residuals, plot_predictions_vs_actual  # assume you have these helper functions
+from src.visualization import plot_residuals, plot_predictions_vs_actual  # Define these in src/visualization.py
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger(__name__)
@@ -45,8 +47,8 @@ def safe_mlflow_log(log_func, *args, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description="Train a Random Forest model.")
-    parser.add_argument("--input_artifact", type=str, required=True, help="Path to input CSV file")
-    parser.add_argument("--val_size", type=float, default=0.2, help="Validation set size")
+    parser.add_argument("--input_artifact", type=str, required=True, help="Path or artifact URI to input CSV file")
+    parser.add_argument("--val_size", type=float, default=0.2, help="Validation set size fraction")
     parser.add_argument("--random_seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--n_estimators", type=int, default=100, help="Number of trees in forest")
     parser.add_argument("--max_depth", type=int, default=None, help="Maximum depth of trees")
@@ -61,7 +63,6 @@ def main():
     logger.info("Loading data...")
     df = load_data(args.input_artifact)
 
-    # Stratify column or None
     stratify_col = df[args.stratify_by] if args.stratify_by.lower() != "none" else None
 
     logger.info("Splitting train/validation sets...")
@@ -72,7 +73,7 @@ def main():
         random_state=args.random_seed
     )
 
-    # Define features to use (customize as needed)
+    # Define features - adjust if needed
     numeric_features = [
         'latitude', 'longitude', 'minimum_nights', 'number_of_reviews',
         'reviews_per_month', 'calculated_host_listings_count', 'availability_365'
@@ -84,11 +85,11 @@ def main():
         df, numeric_features, categorical_features
     )
 
-    # Create copies to avoid SettingWithCopyWarning
+    # Avoid SettingWithCopyWarning
     train = train.copy()
     val = val.copy()
 
-    # Handle missing values for numeric features (example)
+    # Fill missing values example
     if 'reviews_per_month' in numeric_features:
         train['reviews_per_month'] = train['reviews_per_month'].fillna(0)
         val['reviews_per_month'] = val['reviews_per_month'].fillna(0)
@@ -114,11 +115,10 @@ def main():
     logger.info(f"Training set shape: {X_train.shape}")
     logger.info(f"Validation set shape: {X_val.shape}")
 
-    # Initialize W&B run
+    # Start W&B run
     run = wandb.init(project="Project-Build-an-ML-Pipeline-Starter", job_type="train")
 
     try:
-        # Build pipeline
         pipe = Pipeline([
             ("scaler", StandardScaler()),
             ("rf", RandomForestRegressor(
@@ -190,7 +190,7 @@ def main():
         logger.info("Top 5 most important features:")
         logger.info(feat_imp_df.head().to_string(index=False))
 
-        # Plot and save feature importance
+        # Plot feature importance
         fig_feat = plt.figure(figsize=(10, 6))
         sns.barplot(data=feat_imp_df.head(10), x="importance", y="feature")
         plt.title("Top 10 Feature Importances")
@@ -210,7 +210,7 @@ def main():
         run.log_artifact(feat_artifact)
 
         # Residuals plot
-        fig_resid = plot_residuals(pipe, X_val, y_val)  # You must define this function in src/visualization.py
+        fig_resid = plot_residuals(pipe, X_val, y_val)
         fig_resid.savefig("residuals.png", dpi=150, bbox_inches='tight')
         plt.close(fig_resid)
 
@@ -225,7 +225,7 @@ def main():
         run.log_artifact(resid_artifact)
 
         # Predictions vs actual plot
-        fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)  # Define this function as well
+        fig_pred = plot_predictions_vs_actual(pipe, X_val, y_val)
         fig_pred.savefig("predictions_vs_actual.png", dpi=150, bbox_inches='tight')
         plt.close(fig_pred)
 
@@ -239,7 +239,7 @@ def main():
         pred_artifact.add_file("predictions_vs_actual.png")
         run.log_artifact(pred_artifact)
 
-        # Prepare model export folder
+        # Save model export
         os.makedirs("random_forest_dir", exist_ok=True)
 
         model_export = {
@@ -256,7 +256,6 @@ def main():
             }
         }
 
-        # Save model pickle
         model_path = "random_forest_dir/model.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(model_export, f)
@@ -281,7 +280,7 @@ def main():
         logger.info("Model training completed successfully!")
 
     except Exception as e:
-        logger.error(f"Error during training: {str(e)}")
+        logger.error(f"Error during training: {e}")
         run.finish(exit_code=1)
         raise e
 
